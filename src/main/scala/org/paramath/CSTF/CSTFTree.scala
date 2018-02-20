@@ -7,6 +7,7 @@ package org.paramath.CSTF
 import org.paramath.structures.IRowMatrix
 
 import org.paramath.CSTF.utils.CSTFUtils._
+import org.paramath.BLAS
 import breeze.linalg.{DenseMatrix  => BDM, DenseVector => BDV}
 import breeze.numerics._
 import org.apache.spark.SparkContext
@@ -75,9 +76,9 @@ object CSTFTree {
                    m1: IRowMatrix,
                    m2:IRowMatrix,
                    Size:Long,
-                   N:Int) =
+                   N:Int): IRowMatrix =
     {
-      var M = UpdateFM(TreeTensor,m1,m2,Size,Rank,sc)
+      var M: IRowMatrix = UpdateFM(TreeTensor,m1,m2,Size,Rank,sc)
       Lambda= UpdateLambda(M,N)
       M = NormalizeMatrix(M,Lambda)
 
@@ -90,15 +91,15 @@ object CSTFTree {
       for (i <- 0 until IterNum)
       {
         tick = System.currentTimeMillis()
-        MA = Update_NFM(Tree_CBA,MB,MC,MA.numRows(),i)
+        MA = Update_NFM(Tree_CBA,MB,MC,MA.nRows(),i)
         tock = System.currentTimeMillis()
         printTime(tick, tock, "Update NFM, MA")
         tick = tock
-        MB = Update_NFM(Tree_CAB,MC,MA,MB.numRows(),i)
+        MB = Update_NFM(Tree_CAB,MC,MA,MB.nRows(),i)
         tock = System.currentTimeMillis()
         printTime(tick, tock, "Update NFM, MB")
         tick = tock
-        MC = Update_NFM(Tree_ABC,MA,MB,MC.numRows(),i)
+        MC = Update_NFM(Tree_ABC,MA,MB,MC.nRows(),i)
         tock = System.currentTimeMillis()
         printTime(tick, tock, "Update NFM, MC")
 
@@ -112,9 +113,9 @@ object CSTFTree {
           MA,
           MB,
           MC,
-          Compute_MTM_RowMatrix(MA),
-          Compute_MTM_RowMatrix(MB),
-          Compute_MTM_RowMatrix(MC)
+          MA.computeGramian(),
+          MB.computeGramian(),
+          MC.computeGramian()
         )
         tock = System.currentTimeMillis()
         printTime(tick, tock, s"Compute fit $i")

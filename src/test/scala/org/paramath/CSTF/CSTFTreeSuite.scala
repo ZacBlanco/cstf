@@ -11,7 +11,7 @@ class CSTFTreeSuite extends SparkTestSuite {
 
 
     val inputFile = "random1.txt"
-    val outputFile = "CSTF_Output.txt"
+    val outputFile = "CSTF_Output"
 
     val Data:RDD[String] = sc.textFile(inputFile)
     val TensorRdd:RDD[Vector] = CSTFUtils.FileToTensor(Data)
@@ -22,10 +22,6 @@ class CSTFTreeSuite extends SparkTestSuite {
     def tolerance: Double = 1E-12
 
     CSTFTree.CP_ALS(num_iter, TensorRdd, Rank, tolerance, sc, outputFile)
-
-
-
-
 
   }
 

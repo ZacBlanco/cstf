@@ -3,6 +3,7 @@ package org.paramath.CSTF.utils
 import org.paramath.structures.IRowMatrix
 
 import breeze.linalg.{pinv, sum, DenseMatrix => BDM, DenseVector => BDV}
+import org.paramath.BLAS
 import breeze.numerics.{abs, sqrt}
 import org.apache.spark.mllib.linalg.distributed.{IndexedRow, IndexedRowMatrix, RowMatrix}
 import org.apache.spark.mllib.linalg.{Matrices, Matrix, Vector, Vectors}
@@ -72,15 +73,14 @@ object CSTFUtils {
 
 
   def GenM1(SizeOfMatrix: Long,
-            Rank: Int,
+            rank: Int,
             sc: SparkContext): IRowMatrix = {
 
-    val M1: IndexedRowMatrix =
-      new IndexedRowMatrix(Randomized_IRM(SizeOfMatrix, Rank, sc)
-        .rows.map(x =>
-        IndexedRow(x.index, Vectors.zeros(Rank))))
 
-    M1
+
+    new IRowMatrix(
+      Randomized_IRM(SizeOfMatrix, rank, sc).rows.map( f => (f._1, BDV.zeros[Double](rank)))
+    )
   }
 
   /**
@@ -112,25 +112,40 @@ object CSTFUtils {
     * @param matrix
     * @return
     */
-  def Compute_MTM_RowMatrix(matrix: IndexedRowMatrix) = {
-    val mTm = matrix.computeGramianMatrix()
-    val MTM: BDM[Double] = new BDM[Double](mTm.numRows, mTm.numCols, mTm.toArray)
-
-    MTM
+  def Compute_MTM_RowMatrix(matrix: IRowMatrix): BDM[Double] = {
+    matrix.computeGramian()
+//    val MTM: BDM[Double] = new BDM[Double](mTm.numRows, mTm.numCols, mTm.toArray)
+//
+//    MTM
   }
 
 
-  def ComputeM2(m1: IndexedRowMatrix,
-                m2: IndexedRowMatrix): Matrix = {
+  def ComputeM2(m1: IRowMatrix,
+                m2: IRowMatrix): BDM[Double] = {
 
-    val M1M = Compute_MTM_RowMatrix(m1)
-    val M2M = Compute_MTM_RowMatrix(m2)
+//    val M1M = Compute_MTM_RowMatrix(m1)
+//    val M2M = Compute_MTM_RowMatrix(m2)
+//
+//    val result: Matrix = BDMtoMatrix(pinv(M1M :* M2M))
+//
+//    result
 
-    val result: Matrix = BDMtoMatrix(pinv(M1M :* M2M))
-
-    result
-
+    breeze.linalg.pinv(m1.computeGramian() :* m2.computeGramian())
   }
+
+  def UpdateFM(TensorData: RDD[(Vector,List[Vector])],
+               m1: IRowMatrix,
+               m2: IRowMatrix,
+               //Dim: Int,
+               SizeOfMatrix: Long,
+               rank: Int,
+               sc:SparkContext
+              ): IRowMatrix =
+  {
+    ComputeM1(TensorData,m1,m2,SizeOfMatrix,rank,sc)
+      .multiply(ComputeM2(m1,m2))
+  }
+
 
 
   /**
@@ -158,11 +173,11 @@ object CSTFUtils {
                 m2: IRowMatrix,
                 SizeOfMatrix: Long,
                 Rank: Int,
-                sc: SparkContext) = {
+                sc: SparkContext): IRowMatrix = {
 
     val Map_m1 = m1.rows //m1.rows.map(idr => (idr.index.toLong, VtoBDV(idr.vector)))
     val Map_m2 = m2.rows //.map(idr => (idr.index.toLong, VtoBDV(idr.vector)))
-    val Init_M1: IndexedRowMatrix = GenM1(SizeOfMatrix, Rank, sc)
+    val Init_M1: IRowMatrix = GenM1(SizeOfMatrix, Rank, sc)
 
     val Tensor_1 = TreeTensor
       .map(pair => (pair._1(0).toLong, pair))
@@ -183,17 +198,15 @@ object CSTFUtils {
       .sortByKey()
       .reduceByKey(_ + _)
 
-    val M1: IndexedRowMatrix = new IndexedRowMatrix(Join_m2.map(v => IndexedRow(v._1, BDVtoV(v._2))))
-    M1
-
+     new IRowMatrix(Join_m2)
   }
 
-  def UpdateLambda(matrix: IndexedRowMatrix,
-                   N: Int) = {
+  def UpdateLambda(matrix: IRowMatrix,
+                   N: Int): BDV[Double] = {
     if (N == 0)
-      VtoBDV(matrix.toRowMatrix().computeColumnSummaryStatistics().normL2)
+      VtoBDV(matrix.computeColumnSummaryStatistics().normL2)
     else
-      VtoBDV(matrix.toRowMatrix().computeColumnSummaryStatistics().max)
+      VtoBDV(matrix.computeColumnSummaryStatistics().max)
   }
 
 
@@ -241,26 +254,30 @@ object CSTFUtils {
     * @param L
     * @return
     */
-  def NormalizeMatrix(matrix: IndexedRowMatrix,
-                      L: BDV[Double]): IndexedRowMatrix = {
+  def NormalizeMatrix(matrix: IRowMatrix,
+                      L: BDV[Double]): IRowMatrix = {
 
 //        new IndexedRowMatrix(matrix.rows.map(a =>
 //          new IndexedRow(a.index, Vectors.dense((BDV[Double](a.vector.toArray) :/ L).toArray)))) // Single line
 
 
-    val map_M = matrix.rows.map(x =>
-      (x.index, BDV[Double](x.vector.toArray))).mapValues(x => x :/ L)
+//    val map_M = matrix.rows.map(x =>
+//      (x.index, BDV[Double](x.vector.toArray))).mapValues(x => x :/ L)
+//
+//    val NL_M: IndexedRowMatrix = new IndexedRowMatrix(map_M
+//      .map(x =>
+//        IndexedRow(x._1, Vectors.dense(x._2.toArray))))
+//
+//    NL_M
 
-    val NL_M: IndexedRowMatrix = new IndexedRowMatrix(map_M
-      .map(x =>
-        IndexedRow(x._1, Vectors.dense(x._2.toArray))))
-
-    NL_M
+    new IRowMatrix(
+      matrix.rows.mapValues(x => x :/ L)
+    )
   }
 
   def printTime(tick: Long, tock: Long, msg: String): Unit = {
     val time: Long = tock - tick
-    println(s"$msg took $time ms")
+//    println(s"$msg took $time ms")
   }
 
 
