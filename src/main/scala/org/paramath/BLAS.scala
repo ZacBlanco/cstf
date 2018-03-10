@@ -17,8 +17,8 @@
 
 package org.paramath
 
-import com.github.fommil.netlib.{F2jBLAS, BLAS => NetlibBLAS}
 import com.github.fommil.netlib.BLAS.{getInstance => NativeBLAS}
+import com.github.fommil.netlib.{F2jBLAS, BLAS => NetlibBLAS}
 import org.apache.spark.mllib.linalg._
 /**
   * BLAS routines for MLlib's vectors and matrices.

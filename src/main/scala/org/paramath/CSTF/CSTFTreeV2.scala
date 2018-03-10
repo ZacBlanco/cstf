@@ -1,24 +1,19 @@
 package org.paramath.CSTF
 
-/**
-  * Created by cqwcy201101 on 4/28/17.
-  */
-
 import java.io.File
 
-import breeze.linalg.{DenseMatrix => BDM, DenseVector => BDV}
+import breeze.linalg.{sum, DenseMatrix => BDM, DenseVector => BDV}
 import breeze.numerics._
 import org.apache.commons.io.FileUtils
 import org.apache.spark.SparkContext
 import org.apache.spark.mllib.linalg._
 import org.apache.spark.rdd.RDD
 import org.paramath.CSTF.utils.CSTFUtils._
-import org.paramath.structures.IRowMatrix
+import org.paramath.structures.{IRowMatrix, TensorTree3}
 
 import scala.util.control.Breaks
 
-object CSTFTree {
-
+object CSTFTreeV2 {
 
   /**
     * Does the compute
@@ -40,12 +35,13 @@ object CSTFTree {
   {
 
     var tick, tock = System.currentTimeMillis();
-    var cftotalTime: Double = 0
+    var cftotalTime:Double = 0
     val loop = new Breaks
 
-    val Tree_CBA = TensorTree(TensorData,0).cache()
-    val Tree_CAB = TensorTree(TensorData,1).cache()
-    val Tree_ABC = TensorTree(TensorData,2).cache()
+    val Tree_CBA0 = TensorTree(TensorData, 0)
+    val Tree_CBA = new TensorTree3(TensorData,0, sc)
+    val Tree_CAB = new TensorTree3(TensorData,1, sc)
+    val Tree_ABC = new TensorTree3(TensorData,2, sc)
     tock = System.currentTimeMillis()
     printTime(tick, tock, "Caching")
     tick = tock
@@ -71,17 +67,14 @@ object CSTFTree {
     var val_fit = 0.0
     var N:Int = 1
 
-    def Update_NFM(TreeTensor:RDD[(Vector,List[Vector])] ,
-                   m1: IRowMatrix,
-                   m2:IRowMatrix,
+    def Update_NFM(TreeTensor: TensorTree3,
+                   mi: Array[IRowMatrix],
                    Size:Long,
                    N:Int): IRowMatrix =
     {
-      var M: IRowMatrix = UpdateFM(TreeTensor,m1,m2,Size,Rank,sc)
+      var M: IRowMatrix = this.UpdateFM(TreeTensor,mi,Size,Rank,sc)
       Lambda= UpdateLambda(M,N)
-      M = NormalizeMatrix(M,Lambda)
-
-      M
+      NormalizeMatrix(M,Lambda)
     }
 
     val time_s:Double=System.nanoTime()
@@ -89,16 +82,23 @@ object CSTFTree {
     {
       for (i <- 0 until IterNum)
       {
+        val mr = new Array[IRowMatrix](2)
+        mr(0) = MB
+        mr(1) = MC
         tick = System.currentTimeMillis()
-        MA = Update_NFM(Tree_CBA,MB,MC,MA.nRows(),i)
+        MA = Update_NFM(Tree_CBA,mr,MA.nRows(),i)
         tock = System.currentTimeMillis()
         printTime(tick, tock, "Update NFM, MA")
         tick = tock
-        MB = Update_NFM(Tree_CAB,MC,MA,MB.nRows(),i)
+        mr(0) = MC
+        mr(1) = MA
+        MB = Update_NFM(Tree_CAB,mr,MB.nRows(),i)
         tock = System.currentTimeMillis()
         printTime(tick, tock, "Update NFM, MB")
         tick = tock
-        MC = Update_NFM(Tree_ABC,MA,MB,MC.nRows(),i)
+        mr(0) = MA
+        mr(1) = MB
+        MC = Update_NFM(Tree_ABC,mr,MC.nRows(),i)
         tock = System.currentTimeMillis()
         printTime(tick, tock, "Update NFM, MC")
 
@@ -108,7 +108,7 @@ object CSTFTree {
 //        fit = 0
         var cftime = System.currentTimeMillis()
         fit = ComputeFit (
-          Tree_CBA,
+          Tree_CBA0,
           TensorData,
           Lambda,
           MA,
@@ -119,7 +119,7 @@ object CSTFTree {
           MC.computeGramian()
         )
         var cftime2 = System.currentTimeMillis()
-        cftotalTime += (cftime2 - cftime).toDouble
+        cftotalTime += (cftime2 - cftime)
         tock = System.currentTimeMillis()
         printTime(tick, tock, s"Compute fit $i")
         val_fit = abs(fit - pre_fit)
@@ -131,7 +131,7 @@ object CSTFTree {
     }
     val time_e:Double=System.nanoTime()
     cftotalTime /= 1000
-    val rtime = (((time_e-time_s)/1000000000) - cftotalTime/1000)
+    val rtime = (((time_e - time_s)/1000000000) - cftotalTime)
     val runtime = rtime + "s"
 
     println(s"Running time is: $rtime")
@@ -149,7 +149,51 @@ object CSTFTree {
     rtime
   }
 
+  def ComputeFit(TreeTensor: RDD[(Vector, List[Vector])],
+                 TensorData: RDD[Vector],
+                 L: BDV[Double],
+                 A: IRowMatrix,
+                 B: IRowMatrix,
+                 C: IRowMatrix,
+                 ATA: BDM[Double],
+                 BTB: BDM[Double],
+                 CTC: BDM[Double]) = {
+    val tmp: BDM[Double] = (L * L.t) :* ATA :* BTB :* CTC
+    val normXest = abs(sum(tmp))
+    val norm = TensorData.map(x => x.apply(3) * x.apply(3)).reduce(_ + _)
+
+    var product = 0.0
+    val Result = TreeTensor
+      .map(x => (x._1(0).toLong, x))
+      // .join(B.rows.map(idr => (idr.index.toLong, VtoBDV(idr.vector))))
+      .join(B.rows)
+      .mapValues(x => (x._1._1(1).toLong, x)).values
+      //      .join(C.rows.map(idr => (idr.index.toLong, VtoBDV(idr.vector))))
+      .join(C.rows)
+      .mapValues(x => (x._1._1, x._1._2 :* x._2)).values
+      .flatMap(x => x._1._2.map(v => (v(0).toLong, x._2 :*= v.apply(1))))
+      //      .join(A.rows.map(idr => (idr.index.toLong, VtoBDV(idr.vector))))
+      .join(A.rows)
+      .mapValues(v => v._1 :* v._2)
+      .values
+      .reduce(_ + _)
+
+    product = product + Result.t * L
+    val residue = sqrt(normXest + norm - 2 * product)
+    val Fit = 1.0 - residue / sqrt(norm)
 
 
+    Fit
+  }
 
+  def UpdateFM(TensorData: TensorTree3,
+               mi: Array[IRowMatrix],
+               SizeOfMatrix: Long,
+               rank: Int,
+               sc:SparkContext
+              ): IRowMatrix =
+  {
+    TensorData.computeM1(mi,SizeOfMatrix,rank)
+      .multiply(ComputeM2(mi(0),mi(1)))
+  }
 }

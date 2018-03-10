@@ -4,10 +4,7 @@ package org.paramath.structures
 import org.paramath.BLAS
 import breeze.linalg.{DenseMatrix => BDM, DenseVector => BDV}
 import org.apache.spark.rdd.RDD
-import org.apache.hadoop.yarn.webapp.hamlet.HamletSpec.B
-import org.apache.spark.annotation.Since
 import org.apache.spark.mllib.linalg.Vectors
-import org.apache.spark.mllib.linalg.distributed.RowMatrix
 import org.apache.spark.mllib.stat.{MultivariateOnlineSummarizer, MultivariateStatisticalSummary}
 
 class IRowMatrix(var rows: RDD[(Long, BDV[Double])],
