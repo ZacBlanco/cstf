@@ -1,5 +1,11 @@
 package org.paramath.structures
 
+import breeze.linalg.rank
+import org.apache.spark.SparkContext
+import org.apache.spark.mllib.linalg.Vector
+import org.apache.spark.rdd.RDD
+import org.paramath.CSTF.utils.CSTFUtils.{ComputeM2, mttkrp}
+
 object TT3Util {
 
   /**
@@ -53,6 +59,28 @@ object TT3Util {
     */
   def isLastIndex(dims: Int, mode: Int, v: Int): Boolean = {
     (v + 1) % dims == mode
+  }
+
+  /**
+    * List of VecInfo reduce for final stage
+    * @param a
+    * @param b
+    * @return
+    */
+  def vr(a: VecInfo, b: VecInfo): VecInfo = {
+    VecInfo(0, a.vec + b.vec)
+  }
+
+  def mttkrpProduct(TensorData: TensorTree3,
+                    mi: Array[IRowMatrix],
+                    SizeOfMatrix: Long,
+                    rank: Int,
+                    sc:SparkContext
+                   ): IRowMatrix =
+  {
+    val M1 = TensorData.mttkrp(mi,SizeOfMatrix,rank)
+    val M2 = ComputeM2(mi(0),mi(1))
+    M1.multiply(M2)
   }
 
 }

@@ -13,7 +13,7 @@ import org.apache.spark.SparkContext
 import org.apache.spark.mllib.linalg._
 import org.apache.spark.rdd.RDD
 import org.paramath.CSTF.utils.CSTFUtils._
-import org.paramath.structures.IRowMatrix
+import org.paramath.structures.TensorTree
 
 import scala.util.control.Breaks
 
@@ -22,9 +22,10 @@ object CSTFTree {
 
   /**
     * Does the compute
+    *
     * @param IterNum
     * @param TensorData
-    * @param Rank
+    * @param rank
     * @param Tolerance
     * @param sc
     * @param outputPath
@@ -32,20 +33,19 @@ object CSTFTree {
     */
   def CP_ALS(IterNum: Int,
              //TreeTensor:RDD[(Vector,List[Vector])],
-             TensorData:RDD[Vector],
-             Rank:Int,
-             Tolerance:Double,
-             sc:SparkContext,
-             outputPath:String): Double =
-  {
+             TensorData: RDD[Vector],
+             rank: Int,
+             Tolerance: Double,
+             sc: SparkContext,
+             outputPath: String): Double = {
 
     var tick, tock = System.currentTimeMillis();
     var cftotalTime: Double = 0
     val loop = new Breaks
 
-    val Tree_CBA = TensorTree(TensorData,0).cache()
-    val Tree_CAB = TensorTree(TensorData,1).cache()
-    val Tree_ABC = TensorTree(TensorData,2).cache()
+    val Tree_BCA = new TensorTree(sc, TensorData, 0)
+    val Tree_CAB = new TensorTree(sc, TensorData, 1)
+    val Tree_ABC = new TensorTree(sc, TensorData, 2)
     tock = System.currentTimeMillis()
     printTime(tick, tock, "Caching")
     tick = tock
@@ -54,63 +54,58 @@ object CSTFTree {
     tock = System.currentTimeMillis()
     printTime(tick, tock, "SizeVector")
     tick = tock
-    val OrderSize = List(SizeVector(0).toLong+1,SizeVector(1).toLong+1,SizeVector(2).toLong+1)
+    val OrderSize = List(SizeVector(0).toLong + 1, SizeVector(1).toLong + 1, SizeVector(2).toLong + 1)
     tock = System.currentTimeMillis()
     printTime(tick, tock, "OrderSize")
 
     tick = tock
-    var MA = Randomized_IRM(OrderSize(0),2,sc)
-    var MB = Randomized_IRM(OrderSize(1),2,sc)
-    var MC = Randomized_IRM(OrderSize(2),2,sc)
-    var Lambda: BDV[Double] = BDV.zeros(Rank)
+    var MA = Randomized_IRM(OrderSize(0), rank, sc)
+    var MB = Randomized_IRM(OrderSize(1), rank, sc)
+    var MC = Randomized_IRM(OrderSize(2), rank, sc)
+    var lambda: BDV[Double] = BDV.zeros(rank)
     tock = System.currentTimeMillis()
     printTime(tick, tock, "Matrix Generation")
 
     var fit = 0.0
     var pre_fit = 0.0
     var val_fit = 0.0
-    var N:Int = 1
+    var N: Int = 1
 
-    def Update_NFM(TreeTensor:RDD[(Vector,List[Vector])] ,
-                   m1: IRowMatrix,
-                   m2:IRowMatrix,
-                   Size:Long,
-                   N:Int): IRowMatrix =
-    {
-      var M: IRowMatrix = UpdateFM(TreeTensor,m1,m2,Size,Rank,sc)
-      Lambda= UpdateLambda(M,N)
-      M = NormalizeMatrix(M,Lambda)
+    val time_s: Double = System.nanoTime()
+    loop.breakable {
+      for (i <- 0 until IterNum) {
 
-      M
-    }
-
-    val time_s:Double=System.nanoTime()
-    loop.breakable
-    {
-      for (i <- 0 until IterNum)
-      {
         tick = System.currentTimeMillis()
-        MA = Update_NFM(Tree_CBA,MB,MC,MA.nRows(),i)
+        MA = mttkrpProduct(Tree_BCA, MB, MC, MA.nRows(), rank, sc)
+        lambda = updateLambda(MA, i)
+        MA = normalizeMatrix(MA, lambda)
         tock = System.currentTimeMillis()
         printTime(tick, tock, "Update NFM, MA")
+
+
         tick = tock
-        MB = Update_NFM(Tree_CAB,MC,MA,MB.nRows(),i)
+        MB = mttkrpProduct(Tree_CAB, MC, MA, MB.nRows(), rank, sc)
+        lambda = updateLambda(MB, i)
+        MB = normalizeMatrix(MB, lambda)
         tock = System.currentTimeMillis()
         printTime(tick, tock, "Update NFM, MB")
+
+
         tick = tock
-        MC = Update_NFM(Tree_ABC,MA,MB,MC.nRows(),i)
+        MC = mttkrpProduct(Tree_ABC, MA, MB, MC.nRows(), rank, sc)
+        lambda = updateLambda(MC, i)
+        MC = normalizeMatrix(MC, lambda)
         tock = System.currentTimeMillis()
         printTime(tick, tock, "Update NFM, MC")
 
         pre_fit = fit
-
         tick = System.currentTimeMillis()
-//        fit = 0
+        //        fit = 0
         var cftime = System.currentTimeMillis()
-        fit = ComputeFit (
-          Tree_CBA,
+        fit = computeFit(
+          Tree_BCA,
           TensorData,
-          Lambda,
+          lambda,
           MA,
           MB,
           MC,
@@ -123,15 +118,16 @@ object CSTFTree {
         tock = System.currentTimeMillis()
         printTime(tick, tock, s"Compute fit $i")
         val_fit = abs(fit - pre_fit)
-        N = N+1
+        println(s"Fit is $val_fit")
+        N = N + 1
 
-        if (val_fit<Tolerance)
+        if (val_fit < Tolerance)
           loop.break
       }
     }
-    val time_e:Double=System.nanoTime()
+    val time_e: Double = System.nanoTime()
     cftotalTime /= 1000
-    val rtime = (((time_e-time_s)/1000000000) - cftotalTime/1000)
+    val rtime = (((time_e - time_s) / 1000000000) - cftotalTime / 1000)
     val runtime = rtime + "s"
 
     println(s"Running time is: $rtime")
@@ -144,12 +140,8 @@ object CSTFTree {
     FileUtils.deleteDirectory(new File(outputPath))
     RDDTIME.distinct().repartition(1).saveAsTextFile(outputPath)
 
-
-
     rtime
   }
-
-
 
 
 }

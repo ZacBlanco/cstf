@@ -20,12 +20,13 @@ class SparkTestSuite extends FunSuite with BeforeAndAfterAll{
 //    rl.setLevel(Level.ERROR)
 //    sc = spark.sparkContext
 
+
     spark = new SparkConf()
       .setMaster("local[8]")
       .setAppName("CSTF_UnitTest")
+    sc = new SparkContext(spark)
     val rl = Logger.getRootLogger()
     rl.setLevel(Level.ERROR)
-    sc = new SparkContext(spark)
   }
 
 }

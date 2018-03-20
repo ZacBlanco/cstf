@@ -22,7 +22,6 @@ object CSTFRunner {
 
   def main (args: Array[String]): Unit = {
     println(util.Properties.versionString)
-//    println(helptxt)
 
     val sparkS = new SparkConf()
         .setMaster("local[*]")
@@ -42,7 +41,6 @@ object CSTFRunner {
     def Rank:      Int    = 100
     def tolerance: Double = 1E-12
     var rt: Double = 0.0
-    var func = CSTFTree
     if (runType == 1){
       rt = CSTFTree.CP_ALS(num_iter, TensorRdd, Rank, tolerance, sc, outputFile)
       println("V1")

@@ -1,13 +1,15 @@
 package org.paramath.CSTF.utils
 
-import breeze.linalg.{sum, DenseMatrix => BDM, DenseVector => BDV}
+import breeze.linalg.{rank, sum, DenseMatrix => BDM, DenseVector => BDV}
 import breeze.numerics.{abs, sqrt}
+import org.apache.hadoop.yarn.webapp.hamlet.HamletSpec.{A, B}
 import org.apache.spark.mllib.linalg.distributed.RowMatrix
 import org.apache.spark.mllib.linalg.{Matrices, Matrix, Vector, Vectors}
 import org.apache.spark.mllib.random.RandomRDDs
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{HashPartitioner, SparkContext}
-import org.paramath.structures.IRowMatrix
+import org.dmg.pmml.False
+import org.paramath.structures.{IRowMatrix, TensorTree}
 
 object CSTFUtils {
 
@@ -129,20 +131,30 @@ object CSTFUtils {
 //
 //    result
 
-    breeze.linalg.pinv(m1.computeGramian() :* m2.computeGramian())
+    var x1 = m1.computeGramian() :* m2.computeGramian()
+    var singular: Boolean = false
+    try{
+      x1 = breeze.linalg.inv(x1)
+    } catch {
+      case mse: breeze.linalg.MatrixSingularException => singular = true
+    }
+    if (singular) {
+      x1 = breeze.linalg.pinv(x1)
+    }
+
+    x1
   }
 
-  def UpdateFM(TensorData: RDD[(Vector,List[Vector])],
+  def mttkrpProduct(tt: TensorTree,
+//                     TensorData: RDD[(Vector,List[Vector])],
                m1: IRowMatrix,
                m2: IRowMatrix,
-               //Dim: Int,
                SizeOfMatrix: Long,
                rank: Int,
                sc:SparkContext
               ): IRowMatrix =
   {
-    ComputeM1(TensorData,m1,m2,SizeOfMatrix,rank,sc)
-      .multiply(ComputeM2(m1,m2))
+    tt.mttkrp(m1, m2, SizeOfMatrix, rank).multiply(ComputeM2(m1,m2))
   }
 
 
@@ -167,7 +179,7 @@ object CSTFUtils {
     Tree
   }
 
-  def ComputeM1(TreeTensor: RDD[(Vector, List[Vector])],
+  def mttkrp(TreeTensor: RDD[(Vector, List[Vector])],
                 m1: IRowMatrix,
                 m2: IRowMatrix,
                 SizeOfMatrix: Long,
@@ -176,7 +188,6 @@ object CSTFUtils {
 
     val Map_m1 = m1.rows //m1.rows.map(idr => (idr.index.toLong, VtoBDV(idr.vector)))
     val Map_m2 = m2.rows //.map(idr => (idr.index.toLong, VtoBDV(idr.vector)))
-    val Init_M1: IRowMatrix = GenM1(SizeOfMatrix, Rank, sc)
 
     val Tensor_1 = TreeTensor
       .map(pair => (pair._1(0).toLong, pair))
@@ -200,61 +211,69 @@ object CSTFUtils {
      new IRowMatrix(Join_m2)
   }
 
-  def UpdateLambda(matrix: IRowMatrix,
-                   N: Int): BDV[Double] = {
-    if (N == 0)
+  def updateLambda(matrix: IRowMatrix,
+                   n: Int): BDV[Double] = {
+    if (n == 0)
       VtoBDV(matrix.computeColumnSummaryStatistics().normL2)
     else
       VtoBDV(matrix.computeColumnSummaryStatistics().max)
   }
 
 
-  def ComputeFit(TreeTensor: RDD[(Vector, List[Vector])],
+  def computeFit(TT: TensorTree,
                  TensorData: RDD[Vector],
                  L: BDV[Double],
-                 A: IRowMatrix,
-                 B: IRowMatrix,
-                 C: IRowMatrix,
-                 ATA: BDM[Double],
-                 BTB: BDM[Double],
-                 CTC: BDM[Double]) = {
-    val tmp: BDM[Double] = (L * L.t) :* ATA :* BTB :* CTC
+                 I: IRowMatrix,
+                 J: IRowMatrix,
+                 K: IRowMatrix,
+                 ITI: BDM[Double],
+                 JTJ: BDM[Double],
+                 KTK: BDM[Double]) = {
+    val tmp: BDM[Double] = (L * L.t) :* ITI :* JTJ :* KTK
     val normXest = abs(sum(tmp))
-    val norm = TensorData.map(x => x.apply(3) * x.apply(3)).reduce(_ + _)
+    val norm = TensorData.map(x => x(3) * x(3)).reduce(_ + _)
 
     var product = 0.0
-//    val Result = TreeTensor
-//      .map(x => (x._1(0).toLong, x))
-//      // .join(B.rows.map(idr => (idr.index.toLong, VtoBDV(idr.vector))))
-//      .join(B.rows)
-//      .mapValues(x => (x._1._1(1).toLong, x)).values
-////      .join(C.rows.map(idr => (idr.index.toLong, VtoBDV(idr.vector))))
-//      .join(C.rows)
-//      .mapValues(x => (x._1._1, x._1._2 :* x._2)).values
-//      .flatMap(x => x._1._2.map(v => (v(0).toLong, x._2 :*= v.apply(1))))
-////      .join(A.rows.map(idr => (idr.index.toLong, VtoBDV(idr.vector))))
-//      .join(A.rows)
-//      .mapValues(v => v._1 :* v._2)
-//      .values
-//      .reduce(_ + _)
-        val Result = TreeTensor
-          .map(x => (x._1(0).toLong, x))
-//           .join(B.rows.map(idr => (idr.index.toLong, VtoBDV(idr.vector))))
-          .join(B.rows)
-          .mapValues(x => (x._1._1(1).toLong, x)).values
-//          .join(C.rows.map(idr => (idr.index.toLong, VtoBDV(idr.vector))))
-          .join(C.rows)
-          .mapValues(x => (x._1._1, x._1._2 :* x._2)).values
-          .flatMap(x => x._1._2.map(v => (v(0).toLong, x._2 :*= v.apply(1))))
-//          .join(A.rows.map(idr => (idr.index.toLong, VtoBDV(idr.vector))))
-          .join(A.rows)
-          .mapValues(v => v._1 :* v._2)
-          .values
-          .reduce(_ + _)
-    product = product + Result.t * L
+    val result = TT.tree.map(x => (x._1(0).toLong, x)).join(J.rows)
+    val r1 = result.mapValues(x => (x._1._1(1).toLong, x)).values
+    val r2 = r1.join(K.rows).mapValues(x => (x._1._1, x._1._2 :* x._2)).values
+    val r3 = r2.flatMap(x => x._1._2.map(v => (v(0).toLong, x._2 :* v(1))))
+    val r4 = r3.join(I.rows).mapValues(v => v._1 :* v._2)
+
+    val res2 = r4.values.reduce(_ + _)
+
+    product = product + res2.t * L
     val residue = sqrt(normXest + norm - 2 * product)
     val Fit = 1.0 - residue / sqrt(norm)
 
+    Fit
+  }
+
+  def computeFit2(TT: RDD[(Vector, List[Vector])],
+                 TensorData: RDD[Vector],
+                 L: BDV[Double],
+                 I: IRowMatrix,
+                 J: IRowMatrix,
+                 K: IRowMatrix,
+                 ITI: BDM[Double],
+                 JTJ: BDM[Double],
+                 KTK: BDM[Double]) = {
+    val tmp: BDM[Double] = (L * L.t) :* ITI :* JTJ :* KTK
+    val normXest = abs(sum(tmp))
+    val norm = TensorData.map(x => x(3) * x(3)).reduce(_ + _)
+
+    var product = 0.0
+    val result = TT.map(x => (x._1(0).toLong, x)).join(J.rows)
+    val r1 = result.mapValues(x => (x._1._1(1).toLong, x)).values
+    val r2 = r1.join(K.rows).mapValues(x => (x._1._1, x._1._2 :* x._2)).values
+    val r3 = r2.flatMap(x => x._1._2.map(v => (v(0).toLong, x._2 :* v(1))))
+    val r4 = r3.join(I.rows).mapValues(v => v._1 :* v._2)
+
+    val res2 = r4.values.reduce(_ + _)
+
+    product = product + res2.t * L
+    val residue = sqrt(normXest + norm - 2 * product)
+    val Fit = 1.0 - residue / sqrt(norm)
 
     Fit
   }
@@ -266,7 +285,7 @@ object CSTFUtils {
     * @param L
     * @return
     */
-  def NormalizeMatrix(matrix: IRowMatrix,
+  def normalizeMatrix(matrix: IRowMatrix,
                       L: BDV[Double]): IRowMatrix = {
 
 //        new IndexedRowMatrix(matrix.rows.map(a =>
