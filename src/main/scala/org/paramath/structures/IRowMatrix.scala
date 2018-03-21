@@ -11,6 +11,11 @@ class IRowMatrix(var rows: RDD[(Long, BDV[Double])],
                  var numRows: Long = -1,
                  var numCols: Int = -1) {
 
+  def this(rows: RDD[(Long, BDV[Double])]) {
+    this(rows, -1, -1)
+    rows.cache()
+  }
+
 
   def nCols(): Int = {
     if (numCols == -1){

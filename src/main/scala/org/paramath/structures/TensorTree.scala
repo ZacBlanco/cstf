@@ -17,25 +17,24 @@ class TensorTree(sc: SparkContext) {
     this(sc)
     this.dim = dim
     this.dims = tensor.first().size - 1
-//    var inds: Array[Int] = new Array[Int](this.dims)
-//    for (i <- 1 until this.dims) { // Until is DIFFERENT than to
-//      inds(0) = (dim + i) % this.dims
-//    }
+    var inds: Array[Int] = new Array[Int](this.dims-1)
+    for (i <- 1 until this.dims) { // Until is DIFFERENT than to
+      inds(i-1) = (dim + i) % this.dims
+    }
 
-    val index_1 = (dim + 1) % this.dims
-    val index_2 = (dim + 2) % this.dims
-
-
+//    val index_1 = (dim + 1) % this.dims
+//    val index_2 = (dim + 2) % this.dims
 
     var d: Int = this.dims
-    this.tree = tensor.map(v => (Vectors.dense(v(index_1), v(index_2)), Vectors.dense(v(dim), v(d))))
+    this.tree = tensor.map(v => (Vectors.dense(inds.map(i => v(i))), Vectors.dense(v(dim), v(d))))
       .combineByKey(List(_),
         (c: List[Vector], v: Vector) => v :: c,
         (c1: List[Vector], c2: List[Vector]) => c1 ::: c2)
+//      .partitionBy(new HashPartitioner(50))
     this.tensor1 = this.tree
       .map(pair => (pair._1(0).toLong, pair))
-      .partitionBy(new HashPartitioner(this.tree.partitions.length))
-      .persist()
+//      .partitionBy(new HashPartitioner(this.tree.partitions.length))
+      .cache()
   }
 
   def mttkrp(m1: IRowMatrix,
@@ -49,30 +48,21 @@ class TensorTree(sc: SparkContext) {
     val Join_m1 = this.tensor1
       .join(Map_m1)
       .map(line => (line._2._1._1(1).toLong, (line._2._1._2, line._2._2)))
-//      .partitionBy(new HashPartitioner(Tensor_1.partitions.length))
-//      .persist()
 
     val t1 = Join_m1.join(Map_m2)
-    val t2 = t1.mapValues(v => {
-        (v._1._1, v._1._2 :* v._2)
-      }).values
+    val t2 = t1.map(v => (v._2._1._1, v._2._1._2 :* v._2._2))
+//    val t2 = t1.mapValues(v => {
+//        (v._1._1, v._1._2 :* v._2)
+//      }).values
     val t3 = t2.flatMap(pair => {
       pair._1.map(v => {
         var x = pair._2 :* v(1)
         (v(0).toLong, x)
       })
     })
-//            .sortByKey()
-//    val maxVec = t3.reduce((v1: (Long, BDV[Double]), v2: (Long, BDV[Double])) => {
-//      if (breeze.linalg.max(v1._2) > breeze.linalg.max(v2._2)) {
-//        v1
-//      } else {
-//        v2
-//      }
-//    })
+//      .sortByKey()
     val t4 = t3.reduceByKey(_ + _)
 
-    val tx = new IRowMatrix(t4)
     new IRowMatrix(t4)
   }
 }

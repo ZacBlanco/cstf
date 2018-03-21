@@ -1,14 +1,12 @@
 package org.paramath.CSTF.utils
 
-import breeze.linalg.{rank, sum, DenseMatrix => BDM, DenseVector => BDV}
+import breeze.linalg.{sum, DenseMatrix => BDM, DenseVector => BDV}
 import breeze.numerics.{abs, sqrt}
-import org.apache.hadoop.yarn.webapp.hamlet.HamletSpec.{A, B}
 import org.apache.spark.mllib.linalg.distributed.RowMatrix
 import org.apache.spark.mllib.linalg.{Matrices, Matrix, Vector, Vectors}
 import org.apache.spark.mllib.random.RandomRDDs
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{HashPartitioner, SparkContext}
-import org.dmg.pmml.False
 import org.paramath.structures.{IRowMatrix, TensorTree}
 
 object CSTFUtils {
@@ -20,7 +18,13 @@ object CSTFUtils {
     * @return
     */
   def FileToTensor(lines: RDD[String]): RDD[Vector] = {
-    lines.map(line => Vectors.dense(line.split("\t").map(_.toDouble)))
+    val tabs: Boolean = lines.first().contains("\t")
+    var chr = " "
+    if (tabs) {
+      chr = "\t"
+    }
+    lines.map(line => Vectors.dense(line.split(chr).map(_.toDouble)))
+
   }
 
   /**
@@ -308,7 +312,7 @@ object CSTFUtils {
 
   def printTime(tick: Long, tock: Long, msg: String): Unit = {
     val time: Long = tock - tick
-//    println(s"$msg took $time ms")
+    println(s"$msg took $time ms")
   }
 
 

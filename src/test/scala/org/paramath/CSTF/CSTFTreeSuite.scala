@@ -9,7 +9,7 @@ import breeze.linalg.{DenseVector => BDV}
 
 class CSTFTreeSuite extends SparkTestSuite {
 
-  var testFile = "nell2-small.tns"
+  var testFile = "nell2-med.tns"
 //  var testFile = "random2.txt"
   var numTrials = 1
 
@@ -18,10 +18,6 @@ class CSTFTreeSuite extends SparkTestSuite {
   }
 
   test("v2 Test") {
-//    val l1 = IndexedSeq.fill(5)(0)
-//    val l2 = IndexedSeq.fill(5)(0)
-//    l1.updated(0, 6)
-//    println(l1 == l2)
     CPALS_test(CSTFTreeV2.CP_ALS)
   }
 
