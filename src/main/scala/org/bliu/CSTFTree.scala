@@ -1,6 +1,4 @@
-/**
-  * Created by cqwcy201101 on 4/28/17.
-  */
+package org.bliu
 
 import org.apache.spark.mllib.linalg._
 import org.apache.spark.rdd.RDD
@@ -10,50 +8,49 @@ import org.apache.spark.mllib.linalg.distributed._
 import org.apache.spark.mllib.random.RandomRDDs
 import org.apache.spark.HashPartitioner
 import breeze.numerics._
+import org.apache.log4j.{Level, Logger}
 
 import scala.util.control.Breaks
-
-
 
 object CSTFTree {
 
   def main(args: Array[String]): Unit = {
     val conf: SparkConf = new SparkConf()
-      .setMaster("local[1]")
-      .setAppName("CSTF_COO")
-      .set("spark.executor.instances", "8")
-      .set("spark.executor.cores", "1")
+//            .setMaster("local[*]")
+      .setAppName("CSTFTree_Original")
+    //      .set("spark.executor.instances", "8")
+    //      .set("spark.executor.cores", "4")
+
 
 
     val sc: SparkContext = new SparkContext(conf)
+    val rl = Logger.getRootLogger()
+    rl.setLevel(Level.ERROR)
 
-//    val inputFile = "s3n://tensorcp/TensorCP/Input/" + args.apply(0)
-//    val outputFile = "s3n://tensorcp/TensorCP/Output/" + args.apply(1) + "/"
-    val inputFile = "random2.txt"
+    val inputFile = args(0)
     val outputFile = "CSTF_Output"
 
     val Data:RDD[String] = sc.textFile(inputFile)
     val TensorRdd:RDD[Vector] = FileToTensor(Data)
 
 
-    def Num_Itr = args.apply(0).toInt
-    def Rank = args.apply(1).toInt
+    def Num_Itr = args.apply(1).toInt
+    def Rank = args.apply(2).toInt
     def tolerance = 1E-10
 
 
     CP_ALS(Num_Itr,TensorRdd,Rank,tolerance,sc,outputFile)
 
-
-
-
   }
 
 
-
-
-
   def FileToTensor(lines: RDD[String]):RDD[Vector] = {
-    lines.map(line => Vectors.dense(line.split("\t").map(_.toDouble)))
+    val tabs: Boolean = lines.first().contains("\t")
+    var chr = " "
+    if (tabs) {
+      chr = "\t"
+    }
+    lines.map(line => Vectors.dense(line.split(chr).map(_.toDouble)))
   }
 
   def RDD_VtoRowMatrix(RddData:RDD[Vector]):RowMatrix =
@@ -171,8 +168,8 @@ object CSTFTree {
 
     val Tensor_1 = TreeTensor
       .map(pair => (pair._1(0).toLong,pair))
-//      .partitionBy(new HashPartitioner(TreeTensor.partitions.length))
-//      .persist()
+      .partitionBy(new HashPartitioner(TreeTensor.partitions.length))
+      .persist()
 
     val Join_m1 = Tensor_1
       .join(Map_m1)
@@ -294,7 +291,7 @@ object CSTFTree {
     var fit = 0.0
     var pre_fit = 0.0
     var val_fit = 0.0
-    var N:Int = 1
+    var N:Int = 0
 
     def Update_NFM(TreeTensor:RDD[(Vector,List[Vector])] ,
                    m1:IndexedRowMatrix,
@@ -314,11 +311,14 @@ object CSTFTree {
     {
       for (i <- 0 until IterNum)
       {
+        var cpalstick: Double = System.currentTimeMillis().toDouble
         MA = Update_NFM(Tree_CBA,MB,MC,MA.numRows(),i)
         MB = Update_NFM(Tree_CAB,MC,MA,MB.numRows(),i)
         MC = Update_NFM(Tree_ABC,MA,MB,MC.numRows(),i)
+        var cpalstock: Double =System.currentTimeMillis().toDouble
 
         pre_fit = fit
+        var cftick: Double = System.currentTimeMillis().toDouble
         fit = ComputeFit (
           Tree_CBA,
           TensorData,
@@ -331,7 +331,13 @@ object CSTFTree {
           Compute_MTM_RowMatrix(MC)
         )
         val_fit = abs(fit - pre_fit)
+        var cftock: Double =System.currentTimeMillis().toDouble
         N = N+1
+        val cpalstime: Double = (cpalstock - cpalstick) / 1000
+        val cftime: Double = (cftock - cftick) / 1000
+        println(s"CP_ALS Iteration $i runtime: $cpalstime")
+        println(s"ComputeFit iteration $i runtime: $cftime")
+        println(s"Compute Fit Value: $val_fit")
 
         if (val_fit<Tolerance)
           loop.break
@@ -345,9 +351,9 @@ object CSTFTree {
     println("fit = " + val_fit)
     println("Iteration times = " + N)
 
-    while (true) {
-      Thread.sleep(100)
-    }
+//    while (true) {
+//      Thread.sleep(100)
+//    }
     val RDDTIME = sc.parallelize(List(runtime))
 
 //    RDDTIME.distinct().repartition(1).saveAsTextFile(outputPath)

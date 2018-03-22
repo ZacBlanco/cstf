@@ -64,42 +64,43 @@ object CSTFTree {
     var fit = 0.0
     var pre_fit = 0.0
     var val_fit = 0.0
-    var N: Int = 1
+    var N: Int = 0
 
     val time_s: Double = System.nanoTime()
     loop.breakable {
       for (i <- 0 until IterNum) {
 
-        println("Computing A")
+        val cpalstick: Long = System.currentTimeMillis()
+//        println("Computing A")
         tick = System.currentTimeMillis()
         MA = mttkrpProduct(Tree_BCA, MB, MC, MA.nRows(), rank, sc)
         lambda = updateLambda(MA, i)
         MA = normalizeMatrix(MA, lambda)
         tock = System.currentTimeMillis()
-        printTime(tick, tock, "Compute MA")
+        printTime(tick, tock, s"Compute MA $i")
 
-        println("Computing B")
+//        println("Computing B")
         tick = tock
         MB = mttkrpProduct(Tree_CAB, MC, MA, MB.nRows(), rank, sc)
         lambda = updateLambda(MB, i)
         MB = normalizeMatrix(MB, lambda)
         tock = System.currentTimeMillis()
-        printTime(tick, tock, "Compute MB")
+        printTime(tick, tock, s"Compute MB $i")
 
 
-        println("Computing C")
+//        println("Computing C")
         tick = tock
         MC = mttkrpProduct(Tree_ABC, MA, MB, MC.nRows(), rank, sc)
         lambda = updateLambda(MC, i)
         MC = normalizeMatrix(MC, lambda)
         tock = System.currentTimeMillis()
-        printTime(tick, tock, "Compute MC")
+        printTime(tick, tock, s"Compute MC $i")
+        val cpalstock: Long = System.currentTimeMillis()
+        printTime(cpalstick, cpalstock, s"CP_ALS $i")
 
         pre_fit = fit
         tick = System.currentTimeMillis()
-        //        fit = 0
-        println("Computing Fit")
-        var cftime = System.currentTimeMillis()
+        val cftick = System.currentTimeMillis()
         fit = computeFit(
           Tree_BCA,
           TensorData,
@@ -111,12 +112,13 @@ object CSTFTree {
           MB.computeGramian(),
           MC.computeGramian()
         )
-        var cftime2 = System.currentTimeMillis()
-        cftotalTime += (cftime2 - cftime).toDouble
+        val cftock = System.currentTimeMillis()
+        cftotalTime += (cftock - cftick).toDouble
         tock = System.currentTimeMillis()
-        printTime(tick, tock, s"Compute fit $i")
+        printTime(cftick, cftock, s"Compute fit $i")
+
         val_fit = abs(fit - pre_fit)
-        println(s"Fit is $val_fit")
+        println(s"Fit $i is $val_fit")
         N = N + 1
 
         if (val_fit < Tolerance)
@@ -130,13 +132,13 @@ object CSTFTree {
 
     println(s"Running time is: $rtime")
     println(s"Compute fit time: $cftotalTime")
-    println("fit = " + val_fit)
-    println("Iteration times = " + N)
+    println(s"fit = $val_fit")
+    println(s"Iteration times = $N")
     println()
 
     val RDDTIME = sc.parallelize(List(runtime))
-    FileUtils.deleteDirectory(new File(outputPath))
-    RDDTIME.distinct().repartition(1).saveAsTextFile(outputPath)
+//    FileUtils.deleteDirectory(new File(outputPath))
+//    RDDTIME.distinct().repartition(1).saveAsTextFile(outputPath)
 
     rtime
   }

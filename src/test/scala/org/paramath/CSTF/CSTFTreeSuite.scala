@@ -9,8 +9,8 @@ import breeze.linalg.{DenseVector => BDV}
 
 class CSTFTreeSuite extends SparkTestSuite {
 
-  var testFile = "nell2-med.tns"
-//  var testFile = "random2.txt"
+//  var testFile = "nell2-med.tns"
+  var testFile = "random1.txt"
   var numTrials = 1
 
   test("v1 Test") {
@@ -19,6 +19,14 @@ class CSTFTreeSuite extends SparkTestSuite {
 
   test("v2 Test") {
     CPALS_test(CSTFTreeV2.CP_ALS)
+  }
+
+  test("CSTF_COO Test") {
+    val tensor = CSTFUtils.FileToTensor(sc.textFile(testFile))
+    val numiter = 10
+    val rank = 2
+    val tol = 10E-10
+    CSTFCOO.CP_ALS(numiter, tensor, rank, tol, sc, "CSTF_COO_Output", 2)
   }
 
   def CPALS_test(callback: (Int, RDD[Vector], Int, Double, SparkContext, String) => Double): Unit = {

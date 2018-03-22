@@ -282,6 +282,7 @@ object CSTFUtils {
     Fit
   }
 
+
   /**
     * Normalizes matrix values based on the vector L
     *
@@ -312,6 +313,7 @@ object CSTFUtils {
 
   def printTime(tick: Long, tock: Long, msg: String): Unit = {
     val time: Long = tock - tick
+    println()
     println(s"$msg took $time ms")
   }
 

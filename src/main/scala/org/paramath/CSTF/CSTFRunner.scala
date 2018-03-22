@@ -14,41 +14,32 @@ object CSTFRunner {
       |Usage:
       | {input file} {cstf type}
       |
-      | {String} {1|2}
+      | {inputFile} {NumIterations} {rank}
       |
-      | 1 => Old CSTF-Tree
-      | 2 => CSTF-Tree Graph
     """.stripMargin
 
   def main (args: Array[String]): Unit = {
     println(util.Properties.versionString)
 
-    val sparkS: SparkConf = new SparkConf()
-        .setMaster("local[1]")
-      .set("spark.executor.instances", "8")
-      .set("spark.executor.cores", "1")
+    val sparkS: SparkConf = new SparkConf().setAppName("CSTF_TensorTree")
+
     val rl = Logger.getRootLogger()
     rl.setLevel(Level.ERROR)
-    val sc = new SparkContext(sparkS.setAppName("CSTF_UnitTest"))
+    val sc = new SparkContext()
 
     val inputFile = args(0)
     val outputFile = "CSTF_Output"
     val runType: Int = args(1).toInt
-    val data :RDD[String] = sc.textFile(inputFile, 8)
+    val data :RDD[String] = sc.textFile(inputFile)
     val TensorRdd:RDD[Vector] = CSTFUtils.FileToTensor(data)
 
 
-    def num_iter:  Int    = 10
-    def Rank:      Int    = 100
+    def num_iter:  Int    = args(1).toInt
+    def Rank:      Int    = args(2).toInt
     def tolerance: Double = 1E-12
     var rt: Double = 0.0
-    if (runType == 1){
-      println("V1")
-      rt = CSTFTree.CP_ALS(num_iter, TensorRdd, Rank, tolerance, sc, outputFile)
-    } else if (runType == 2){
-      println("V2")
-      rt = CSTFTreeV2.CP_ALS(num_iter, TensorRdd, Rank, tolerance, sc, outputFile)
-    }
+    println("V1")
+    rt = CSTFTree.CP_ALS(num_iter, TensorRdd, Rank, tolerance, sc, outputFile)
     println(s"Running time: $rt")
 
   }

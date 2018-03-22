@@ -1,9 +1,5 @@
 package org.bliu
 
-/**
-  * Created by cqwcy201101 on 4/28/17.
-  */
-
 import breeze.linalg.{pinv, sum, DenseMatrix => BDM, DenseVector => BDV}
 import breeze.numerics._
 import org.apache.log4j.{Level, Logger}
@@ -22,10 +18,10 @@ object CSTFTreeV2 {
 
   def main(args: Array[String]): Unit = {
     val conf: SparkConf = new SparkConf()
-      .setMaster("local[*]")
+//      .setMaster("local[*]")
       .setAppName("CSTFTree")
-      .set("spark.executor.instances", "8")
-      .set("spark.executor.cores", "4")
+//      .set("spark.executor.instances", "8")
+//      .set("spark.executor.cores", "4")
 
 
 
@@ -47,8 +43,6 @@ object CSTFTreeV2 {
     CP_ALS(Num_Itr,TensorRdd,Rank,tolerance,sc,outputFile)
 
   }
-
-
 
 
 
@@ -180,7 +174,7 @@ object CSTFTreeV2 {
       .join(Map_m1)
       .map(line => (line._2._1._1(1).toLong, (line._2._1._2,line._2._2)))
       .partitionBy(new HashPartitioner(Tensor_1.partitions.length))
-      .persist()
+//      .persist()
 
     val Join_m2 = Join_m1
       .join(Map_m2)
@@ -333,7 +327,7 @@ object CSTFTreeV2 {
         val cftime: Double = (cftock - cftick) / 1000
         println(s"CP_ALS Iteration $i runtime: $cpalstime")
         println(s"ComputeFit iteration $i runtime: $cftime")
-        println(s"Compute Fit Value: ")
+        println(s"Compute Fit Value: $val_fit")
         N = N+1
 
         if (val_fit<Tolerance)
