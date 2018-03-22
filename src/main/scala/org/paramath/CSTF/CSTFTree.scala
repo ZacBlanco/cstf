@@ -119,6 +119,8 @@ object CSTFTree {
 
         val_fit = abs(fit - pre_fit)
         println(s"Fit $i is $val_fit")
+        val totalIterTime = ((cpalstock-cpalstick) / 1000) + ((cftock - cftick)/1000)
+        println(s"Total CP_ALS time $i $totalIterTime")
         N = N + 1
 
         if (val_fit < Tolerance)
