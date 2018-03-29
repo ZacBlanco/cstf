@@ -126,10 +126,7 @@ object CloudCP {
       .values.map(x => (x._1, K_Product(x._1.apply(3), BDV[Double](x._2.vector.toArray),BDV[Double](x._3.vector.toArray))))
       .map(x => (x._1.apply(Dim).toLong, x._2))
       .reduceByKey((x,y) => x+y)
-    //.sortByKey()
 
-
-    //ReduceResult.collect().foreach(println)
 
     val tempM1 = InitialM1.rows.map(
       x => (x.index,BDV[Double](x.vector.toArray)))

@@ -17,29 +17,24 @@ class TensorTree(sc: SparkContext) {
     this(sc)
     this.dim = dim
     this.dims = tensor.first().size - 1
-    var inds: Array[Int] = new Array[Int](this.dims-1)
+    val inds: Array[Int] = new Array[Int](this.dims-1)
     for (i <- 1 until this.dims) { // Until is DIFFERENT than to
       inds(i-1) = (dim + i) % this.dims
     }
-
-//    val index_1 = (dim + 1) % this.dims
-//    val index_2 = (dim + 2) % this.dims
 
     var d: Int = this.dims
     this.tree = tensor.map(v => (Vectors.dense(inds.map(i => v(i))), Vectors.dense(v(dim), v(d))))
       .combineByKey(List(_),
         (c: List[Vector], v: Vector) => v :: c,
-        (c1: List[Vector], c2: List[Vector]) => c1 ::: c2)
-//      .partitionBy(new HashPartitioner(50))
+        (c1: List[Vector], c2: List[Vector]) => c1 ::: c2).cache()
+
     this.tensor1 = this.tree
       .map(pair => (pair._1(0).toLong, pair))
-//      .partitionBy(new HashPartitioner(this.tree.partitions.length))
       .cache()
   }
 
   def mttkrp(m1: IRowMatrix,
              m2: IRowMatrix,
-             SizeOfMatrix: Long,
              Rank: Int): IRowMatrix = {
 
     val Map_m1 = m1.rows //m1.rows.map(idr => (idr.index.toLong, VtoBDV(idr.vector)))

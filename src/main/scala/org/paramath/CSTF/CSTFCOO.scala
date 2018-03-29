@@ -10,7 +10,7 @@ import org.apache.spark.mllib.linalg._
 import org.apache.spark.mllib.linalg.distributed._
 import org.apache.spark.mllib.random.RandomRDDs
 import org.apache.spark.rdd.RDD
-import org.apache.spark.storage.StorageLevel
+import org.apache.spark.HashPartitioner
 import org.apache.spark.{Partitioner, SparkConf, SparkContext}
 import org.paramath.CSTF.utils.CSTFUtils
 import org.paramath.structures.IRowMatrix
@@ -46,15 +46,6 @@ object CSTFCOO {
 
 
   }
-
-  //
-  //  def FileToTensor(lines: RDD[String]): RDD[Vector] =
-  //  {
-  //    //ines.map(line => Vectors.dense(line.split("\t").map(_.toDouble)))
-  //
-  //    lines.map(line => line.split("\t").map(_.toDouble)).zipWithIndex()
-  //      .map(x => Vectors.dense(x._1.toList.::(x._2.toDouble).toArray))
-  //  }
 
 
   def FileToTensor(lines: RDD[String]): RDD[Vector] = {
@@ -93,8 +84,7 @@ object CSTFCOO {
                         N: Int): IndexedRowMatrix = {
     val tempRowMatrix: RowMatrix = RandRowMatrix(Size, Rank, sc)
     val indexed = tempRowMatrix.rows.zipWithIndex()
-      .map { case (x, y) => (y, Vectors.dense(x.toArray)) }
-      .partitionBy(new MyPartitioner(32 * (N - 1))).persist()
+      .map({ case (x, y) => (y, Vectors.dense(x.toArray)) })
 
     new IndexedRowMatrix(indexed.map(pair => IndexedRow(pair._1, pair._2)))
   }
@@ -160,19 +150,14 @@ object CSTFCOO {
     }
 
     x1
-//    val result: Matrix = BDMtoMatrix(pinv(M1M :* M2M))
-//    result
 
   }
 
   def PairRDD(Data: RDD[Vector],
               Dim: Int,
               N: Int) = {
-    //val n = Data.partitions.length
-    val mapped = Data.map(line => (line(Dim).toLong, line))
-    mapped.partitionBy(new MyPartitioner(32 * (N - 1))).persist(StorageLevel.MEMORY_AND_DISK)
-    //val partitioner = new HashPartitioner(Data.partitions.length)
-    //rtitionBy(partitioner).persist()
+    val mapped = Data.map(line => (line(Dim).toLong, line)).partitionBy(new HashPartitioner(N))
+    mapped
   }
 
   def UpdateM(M: IndexedRowMatrix,
@@ -189,29 +174,6 @@ object CSTFCOO {
       .multiply(m2)
 
 
-
-
-    //val tmp = M.leftOuterJoin(m1)
-    //  .mapValues(pair => {if (pair._2.nonEmpty) pair._2.get else pair._1})
-    //.collect()
-
-    //val tmp = M.leftOuterJoin(m1).mapValues(pair => pair._2.get)
-    //   .map(pair => IndexedRow(pair._1,BDVtoV(pair._2)))
-
-
-    /*
-    ToIndexRM (
-     M.leftOuterJoin(m1)
-     .mapValues(pair => {if (pair._2.nonEmpty) pair._2.get else pair._1})
-   )
-     .multiply(m2)
-     .rows
-     .map(idr => (idr.index,VtoBDV(idr.vector)))
-
-    //M.leftOuterJoin(m1).mapValues(pair => {if (pair._2.nonEmpty) pair._2.get else pair._1})
-*/
-
-
   }
 
   def IRMtoRdd(IdexRM: IndexedRowMatrix) =
@@ -225,22 +187,6 @@ object CSTFCOO {
                 //SizeOfMatrix:Long,
                 Rank: Int) = {
 
-    //val Init_M1:IndexedRowMatrix = GenM1(SizeOfMatrix,Rank,sc)
-
-    //val Map_m1 = m1.map(pair => (idr.index, VtoBDV(idr.vector)))
-    //val Map_m2 = m2.map(idr => (idr.index, VtoBDV(idr.vector)))
-    /*
-          val Join_m1 = PairRdd1.join(m1)
-            .map(line => (line._2._1(Index).toLong,line._2._1(3)*line._2._2))
-
-          val Join_m2 = PairRdd2.join(m2)
-            .map(line => (line._2._1(Index).toLong,line._2._2))
-
-          val M1 = Join_m1.join(Join_m2)
-            .mapValues(v => v._1:*v._2)
-            .reduceByKey(_+_)
-
-     */
     val index_1 = (Index + 1) % 3
     val index_2 = (Index + 2) % 3
 
@@ -253,43 +199,8 @@ object CSTFCOO {
     M1
 
 
-    // val tmp2 = PairRdd2.join(IRMtoRdd(m2)).map{case (long,(vector,bdv)) => (vector(0), (vector(Index).toLong, bdv))}
-
-
-    // val M1 = tmp1.join(tmp2)
-    //   .map{case (rowNum,((outputIdx1, bdv1),(outputIdx2, bdv2))) => (outputIdx1, bdv1:*bdv2)}
-    //   .reduceByKey(_+_)
-
-
-    //.map(pair => (pair._2._1._1, pair._2._1._2:*pair._2._2._2))
-    //.reduceByKey(_+_)
-
-
-    //.map(line => (line._2._1(Index).toLong,line._2._1(3)*line._2._2))
-    //.join(PairRdd2.leftOuterJoin(IRMtoRdd(m2))
-    //.map(line => (line._2._1(Index).toLong,line._2._2)))
-
   }
 
-  /*
-    def UpdateFM(PairRdd1:RDD[(Long,Vector)],
-                 PairRdd2:RDD[(Long,Vector)],
-                 m1:RDD[(Long,BDV[Double])],
-                 m2:RDD[(Long,BDV[Double])],
-                 Index: Int,  //index to update (0,1,2)
-                 SizeOfMatrix:Long,
-                 Rank:Int
-                 //,
-                 //sc:SparkContext
-                ) = {
-
-      val M1 = new IndexedRowMatrix(ComputeM1(PairRdd1,PairRdd2,m1,m2,Index,SizeOfMatrix,Rank)
-        .map(pair => IndexedRow(pair._1, BDVtoV(pair._2)) ))
-
-      M1.multiply(ComputeM2(m1,m2)).rows.map(idr => (idr.index,VtoBDV(idr.vector)))
-    }
-
-  */
 
   def UpdateLambda(matrix: IndexedRowMatrix,
                    N: Int) = {
@@ -379,7 +290,7 @@ object CSTFCOO {
     val SizeVector = RDD_VtoRowMatrix(TensorData).computeColumnSummaryStatistics().max
     val OrderSize = Vector(SizeVector(Indx_i).toLong + 1, SizeVector(Indx_j).toLong + 1, SizeVector(Indx_k).toLong + 1)
 
-    val cfTree: RDD[(Vector, List[Vector])] = CSTFUtils.TensorTree(TensorData, 0)
+    val cfTree: RDD[(Vector, List[Vector])] = CSTFUtils.TensorTree(TensorData, 0).partitionBy(new HashPartitioner(Num_node))
     var tick = System.currentTimeMillis()
     var tock = System.currentTimeMillis()
     var MA: IndexedRowMatrix = Indexed_RowMatrix(OrderSize(Indx_i), Rank, sc, Num_node)
@@ -387,9 +298,9 @@ object CSTFCOO {
     var MC: IndexedRowMatrix = Indexed_RowMatrix(OrderSize(Indx_j), Rank, sc, Num_node)
 
 
-    val pairRdd_I = PairRDD(TensorData, Indx_i, Num_node)
-    val pairRdd_J = PairRDD(TensorData, Indx_j, Num_node)
-    val pairRdd_K = PairRDD(TensorData, Indx_k, Num_node)
+    val pairRdd_I = PairRDD(TensorData, Indx_i, Num_node).cache()
+    val pairRdd_J = PairRDD(TensorData, Indx_j, Num_node).cache()
+    val pairRdd_K = PairRDD(TensorData, Indx_k, Num_node).cache()
 
     val num_pair = pairRdd_I.partitions.length
 
@@ -408,9 +319,7 @@ object CSTFCOO {
       new IndexedRowMatrix(a.rows.map(r => IndexedRow(r._1, BDVtoV(r._2))))
     }
 
-
     val time_s: Double = System.nanoTime()
-
 
     loop.breakable {
       for (i <- 0 until IterNum) {
@@ -454,7 +363,9 @@ object CSTFCOO {
         CSTFUtils.printTime(tick, tock, s"Compute Fit $i")
         val_fit = abs(fit - pre_fit)
         println(s"Fit $i $val_fit")
-
+        val ttime = ((tock-tick)/1000) + ((cpalstock-cpalstick)/1000)
+        println()
+        println(s"Total CP_ALS $i $ttime")
 
         //        N = N +1
         if (val_fit < tolerance)
@@ -491,7 +402,7 @@ object CSTFCOO {
         "partition_TensorRdd = " + num_tensor)
     )
 
-    RDDTIME.distinct().repartition(1).saveAsTextFile(outputPath)
+//    RDDTIME.distinct().repartition(1).saveAsTextFile(outputPath)
 
 
     sc.stop()

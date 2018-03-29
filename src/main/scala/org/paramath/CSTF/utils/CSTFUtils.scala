@@ -150,15 +150,13 @@ object CSTFUtils {
   }
 
   def mttkrpProduct(tt: TensorTree,
-//                     TensorData: RDD[(Vector,List[Vector])],
                m1: IRowMatrix,
                m2: IRowMatrix,
-               SizeOfMatrix: Long,
                rank: Int,
                sc:SparkContext
               ): IRowMatrix =
   {
-    tt.mttkrp(m1, m2, SizeOfMatrix, rank).multiply(ComputeM2(m1,m2))
+    tt.mttkrp(m1, m2, rank).multiply(ComputeM2(m1,m2))
   }
 
 

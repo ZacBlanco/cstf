@@ -29,7 +29,6 @@ object TensorCP {
     rl.setLevel(Level.ERROR)
     val inputData = sc.textFile(inputFile)
 
-//    val TensorData = CloudCP.readFile(inputData).cache()
     val TensorData = CSTFUtils.FileToTensor(sc.textFile(inputFile)).cache()
 
     val SizeVector = CloudCP.RDD_VtoRowMatrix(TensorData)
@@ -42,7 +41,7 @@ object TensorCP {
     val Dim_2:Int = 1
     val Dim_3:Int = 2
 
-    val iterat =args(1).toInt
+    val iterat = args(1).toInt
     val R:Int = args(2).toInt
     val tolerance = 1E-10
 
@@ -53,11 +52,6 @@ object TensorCP {
 
     var N:Int = 0
 
-/*
-    var MA:IndexedRowMatrix = new IndexedRowMatrix(MAdata.zipWithIndex().map{case (x,y) => IndexedRow(y,x)})
-    var MB:IndexedRowMatrix = new IndexedRowMatrix(MBdata.zipWithIndex().map{case (x,y) => IndexedRow(y,x)})
-    var MC:IndexedRowMatrix = new IndexedRowMatrix(MAdata.zipWithIndex().map{case (x,y) => IndexedRow(y,x)})
-*/
 
     var ATA = CloudCP.Compute_MTM_RowMatrix(MA)
     var BTB = CloudCP.Compute_MTM_RowMatrix(MB)
@@ -65,48 +59,8 @@ object TensorCP {
 
     var Lambda:BDV[Double] = BDV.zeros(R)
     var fit:Double = 0.0
-    var prev_fit:Double =0.0
-    var val_fit:Double =0.0
-
-    /*
-        val testM1 = CalculateM1(TensorData,MB,MC,Dim_1,SizeA,R,sc)
-        testM1.rows.collect().foreach(println)
-        val testM2 = CalculateM2(MB,MC)
-        println(testM2)
-        val testM1M1 = testM1.multiply(testM2)
-        testM1M1.rows.collect().foreach(println)
-
-        Lambda = UpdateLambda(testM1M1)
-        //val RDDLambda = sc.parallelize(Vector(Lambda))
-        //var boradambda = sc.broadcast(RDDLambda.collect())
-
-        println(Lambda)
-
-        val testM1M1_2 = testM1M1.rows.map(x => (x.index, BDV[Double](x.vector.toArray))).mapValues(x=> (x :/ Lambda))
-
-          //IndexedRow(x.index, Vectors.dense(((BDV[Double](x.vector.toArray)) :/ Lambda ).toArray)))
-        testM1M1_2.collect().foreach(println)
-
-        val testM1M2_3 = UpdateMatrix(TensorData,Lambda,MB,MC,Dim_1,SizeA,R,sc)
-        testM1M2_3.rows.collect().foreach(println)
-    */
-
-
-    /*
-        val testB1 = CalculateM1(TensorData,MC,MA,Dim_2,SizeB,R,sc)
-        testB1.rows.collect().foreach(println)
-        val testB2 = testB1.multiply(CalculateM2(MC,MA))
-        testB2.rows.collect().foreach(println)
-
-        for (i <- 0 until R){
-          Lambda = UpdateLambda(testB2,i)
-          MB = UpdateMatrix(TensorData,Lambda,MC,MA,Dim_2,SizeB,R,sc)
-
-        }
-        println(Lambda)
-        MB.rows.collect().foreach(println)
-    */
-
+    var prev_fit:Double = 0.0
+    var val_fit:Double = 0.0
 
 
     val loop = new Breaks
@@ -138,6 +92,7 @@ object TensorCP {
         MC = CloudCP.NormalizeMatrix(MC,Lambda)
         CTC= CloudCP.Compute_MTM_RowMatrix(MC)
         tock = System.currentTimeMillis()
+
         CSTFUtils.printTime(tick, tock, s"Compute MC $i")
         val cpalstock = System.currentTimeMillis()
         CSTFUtils.printTime(cpalstick, cpalstock, s"CP_ALS $i")
@@ -147,7 +102,11 @@ object TensorCP {
         tock = System.currentTimeMillis()
         CSTFUtils.printTime(tick, tock, s"Compute Fit $i")
         val_fit = abs(fit - prev_fit)
+        val ttime = ((cpalstock-cpalstick)/1000) + ((tock-tick)/1000)
+        println()
+        println(s"Total CP_ALS $i $ttime")
         println(s"Fit Value $i : $val_fit")
+
 
         N = N +1
 

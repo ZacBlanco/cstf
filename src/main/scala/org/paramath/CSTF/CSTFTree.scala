@@ -73,7 +73,7 @@ object CSTFTree {
         val cpalstick: Long = System.currentTimeMillis()
 //        println("Computing A")
         tick = System.currentTimeMillis()
-        MA = mttkrpProduct(Tree_BCA, MB, MC, MA.nRows(), rank, sc)
+        MA = mttkrpProduct(Tree_BCA, MB, MC, rank, sc)
         lambda = updateLambda(MA, i)
         MA = normalizeMatrix(MA, lambda)
         tock = System.currentTimeMillis()
@@ -81,7 +81,7 @@ object CSTFTree {
 
 //        println("Computing B")
         tick = tock
-        MB = mttkrpProduct(Tree_CAB, MC, MA, MB.nRows(), rank, sc)
+        MB = mttkrpProduct(Tree_CAB, MC, MA, rank, sc)
         lambda = updateLambda(MB, i)
         MB = normalizeMatrix(MB, lambda)
         tock = System.currentTimeMillis()
@@ -90,7 +90,7 @@ object CSTFTree {
 
 //        println("Computing C")
         tick = tock
-        MC = mttkrpProduct(Tree_ABC, MA, MB, MC.nRows(), rank, sc)
+        MC = mttkrpProduct(Tree_ABC, MA, MB, rank, sc)
         lambda = updateLambda(MC, i)
         MC = normalizeMatrix(MC, lambda)
         tock = System.currentTimeMillis()
@@ -120,7 +120,8 @@ object CSTFTree {
         val_fit = abs(fit - pre_fit)
         println(s"Fit $i is $val_fit")
         val totalIterTime = ((cpalstock-cpalstick) / 1000) + ((cftock - cftick)/1000)
-        println(s"Total CP_ALS time $i $totalIterTime")
+        println()
+        println(s"Total CP_ALS $i $totalIterTime")
         N = N + 1
 
         if (val_fit < Tolerance)
