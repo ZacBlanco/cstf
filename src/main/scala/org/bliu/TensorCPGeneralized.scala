@@ -111,7 +111,7 @@ object TensorCPGeneralized {
         CSTFUtils.printTime(cpalstick, cpalstock, s"CP_ALS $i")
         prev_fit = fit
         tick = System.currentTimeMillis()
-        fit = computeFit(tensor, lambda, matrices)
+//        fit = computeFit(tensor, lambda, matrices)
         tock = System.currentTimeMillis()
         CSTFUtils.printTime(tick, tock, s"Compute Fit $i")
         val_fit = abs(fit - prev_fit)
@@ -123,8 +123,8 @@ object TensorCPGeneralized {
 
         N = N +1
 
-        if (val_fit < tolerance)
-          loop.break
+//        if (val_fit < tolerance)
+//          loop.break
       }
 
 

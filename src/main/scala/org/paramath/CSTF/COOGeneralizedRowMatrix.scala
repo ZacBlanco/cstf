@@ -169,8 +169,8 @@ object COOGeneralizedRowMatrix {
 
         N = N +1
 
-        if (val_fit < tolerance)
-          loop.break
+//        if (val_fit < tolerance)
+//          loop.break
       }
 
 
