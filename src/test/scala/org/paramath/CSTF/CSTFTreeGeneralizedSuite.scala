@@ -12,13 +12,25 @@ class CSTFTreeGeneralizedSuite extends SparkTestSuite{
   //    val testFile = "random1.txt"
 //  val testFile = "random2.txt"
 //  val testFile = "nell2-small.tns"
-//  val testFile = "enron-small.tns"
-    val testFile = "vast-small.tns"
+//  val testFile = "enron-med.tns"
+  val testFile = "vast-med.tns"
+//  val testFile = "vast-small.tns"
   val numTrials = 1
 
   test("Tree Generalized") {
     CPALS_test(CSTFTreeGeneralized.CP_ALS)
 
+  }
+
+  test("NEW C00 OPTIMIZED") {
+    val Data:RDD[String] = sc.textFile(testFile)
+    val tensor:RDD[Vector] = CSTFUtils.FileToTensor(Data)
+
+
+    def maxIter:  Int    = 15
+    def rank:      Int    = 2
+    def tolerance: Double = 1E-10
+    COOGeneralized.CP_ALS(tensor, maxIter, rank, tolerance, sc)
   }
 
   test("COO Generalized") {

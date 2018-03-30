@@ -26,7 +26,11 @@ class TensorTreeGeneralized(sc: SparkContext) {
     }
 
     var d: Int = this.dims
-    this.tree = tensor.map(v => (Vectors.dense(inds.map(i => v(i))), Vectors.dense(v(dim), v(d))))
+    this.tree = tensor.map(v =>
+      (Vectors.dense(inds.map(i => v(i))), Vectors.dense(v(dim), v(d)))
+
+
+    )
       .combineByKey(List(_),
         (c: List[Vector], v: Vector) => v :: c,
         (c1: List[Vector], c2: List[Vector]) => c1 ::: c2).cache()

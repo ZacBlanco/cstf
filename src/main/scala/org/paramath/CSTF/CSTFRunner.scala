@@ -5,6 +5,7 @@ import org.apache.log4j.{Level, Logger}
 import org.apache.spark.mllib.linalg.Vector
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
+import org.bliu.TensorCPGeneralized
 import org.paramath.CSTF.utils.CSTFUtils
 
 object CSTFRunner {
@@ -25,24 +26,40 @@ object CSTFRunner {
     val inputFile: String = args(0)
     val maxIterations:  Int    = args(1).toInt
     val rank:      Int    = args(2).toInt
+    var version: Int = args(3).toInt
     val tolerance: Double = 1E-10
 
     println(s"Running Generalized CSTF Tree on $inputFile")
 
 
-    val sparkS: SparkConf = new SparkConf().setAppName("CSTF_TensorTree")
+    var sparkS: SparkConf = new SparkConf().setAppName("CSTFRunner")
+//      sparkS = sparkS.setMaster("local[*]")
 
-    val rl = Logger.getRootLogger()
+    var rl = Logger.getRootLogger()
     rl.setLevel(Level.ERROR)
-    val sc = new SparkContext()
+    val sc = new SparkContext(sparkS)
+    rl = Logger.getRootLogger()
+    rl.setLevel(Level.ERROR)
 
     val outputFile = "CSTF_Output"
-    val data :RDD[String] = sc.textFile(inputFile)
-    val TensorRdd:RDD[Vector] = CSTFUtils.FileToTensor(data)
+    val data: RDD[String] = sc.textFile(inputFile)
+    val tensor:RDD[Vector] = CSTFUtils.FileToTensor(data)
 
 
     var rt: Double = 0.0
-    rt = CSTFTreeGeneralized.CP_ALS(TensorRdd, maxIterations, rank, tolerance, sc, outputFile)
+    if (version == 0) {
+      println("Running Generalized Tree COO")
+      rt = CSTFTreeGeneralized.CP_ALS(tensor, maxIterations, rank, tolerance, sc, outputFile)
+    } else if (version == 1) {
+      println("Running generalized TensorCP COO")
+      rt = TensorCPGeneralized.CP_ALS(tensor, maxIterations, rank, tolerance, sc)
+    } else if (version == 2) {
+      println("Running generalized QCOO")
+      rt = COOGeneralized.CP_ALS(tensor, maxIterations, rank, tolerance, sc)
+    } else if (version == 3) {
+      println("Running generalized QCOO with native spark ops")
+      rt = COOGeneralizedRowMatrix.CP_ALS(tensor, maxIterations, rank, tolerance, sc)
+    }
     println(s"Running time: $rt")
 
   }

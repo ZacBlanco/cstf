@@ -1,11 +1,12 @@
 package org.paramath.CSTF.utils
 
-import breeze.linalg.{sum, DenseMatrix => BDM, DenseVector => BDV}
+import breeze.linalg.{rank, sum, DenseMatrix => BDM, DenseVector => BDV}
 import breeze.numerics.{abs, sqrt}
-import org.apache.spark.mllib.linalg.distributed.RowMatrix
+import org.apache.spark.mllib.linalg.distributed.{IndexedRow, IndexedRowMatrix, RowMatrix}
 import org.apache.spark.mllib.linalg.{Matrices, Matrix, Vector, Vectors}
 import org.apache.spark.mllib.random.RandomRDDs
 import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.catalyst.expressions.Size
 import org.apache.spark.{HashPartitioner, SparkContext}
 import org.paramath.structures.{IRowMatrix, TensorTree}
 
@@ -109,7 +110,38 @@ object CSTFUtils {
 
   def BDVtoV(bdv: BDV[Double]) = Vectors.dense(bdv.toArray)
 
-  def BDMtoMatrix(InputData: BDM[Double]): Matrix = Matrices.dense(InputData.rows, InputData.cols, InputData.data)
+  def BDMToMatrix(InputData: BDM[Double]): Matrix = Matrices.dense(InputData.rows, InputData.cols, InputData.data)
+
+  def MatrixToBDM(m: Matrix): BDM[Double] = new BDM(m.numRows, m.numCols, m.toArray)
+
+
+  def randomRowMatrix(nRows:Long, rank:Int, sc:SparkContext): RowMatrix = {
+
+    val rowData = RandomRDDs.uniformVectorRDD(sc,nRows,rank)
+      .map(x => Vectors.dense(BDV.rand[Double](rank).toArray))
+    val matrixRandom: RowMatrix = new RowMatrix(rowData,nRows,rank)
+
+    matrixRandom
+  }
+
+  def splitIndexedRowMatrix(m: IndexedRowMatrix): RDD[(Long, Vector)] = {
+    m.rows.map(f => (f.index, f.vector))
+  }
+
+  /**
+    * Generates a random IndexedRowMatrix.
+    * @param nRows
+    * @param rank
+    * @param sc
+    * @return
+    */
+  def randomIndexedRowMatrix(nRows:Long, rank:Int, sc:SparkContext)={
+
+    val tempRowMatrix: RowMatrix = randomRowMatrix(nRows,rank,sc)
+    val map = tempRowMatrix.rows.zipWithIndex()
+      .map{case (x,y) => IndexedRow(y, Vectors.dense(x.toArray))}
+    new IndexedRowMatrix (map)
+  }
 
   /**
     *
@@ -221,6 +253,14 @@ object CSTFUtils {
       VtoBDV(matrix.computeColumnSummaryStatistics().max)
   }
 
+  def updateLambda(matrix: IndexedRowMatrix,
+                   n: Int): BDV[Double] = {
+    if (n == 0)
+      VtoBDV(matrix.toRowMatrix().computeColumnSummaryStatistics().normL2)
+    else
+      VtoBDV(matrix.toRowMatrix().computeColumnSummaryStatistics().max)
+  }
+
 
   def computeFit(TT: TensorTree,
                  TensorData: RDD[Vector],
@@ -308,6 +348,15 @@ object CSTFUtils {
       matrix.rows.mapValues(x => x :/ L)
     )
   }
+
+  def normalizeMatrix(matrix: IndexedRowMatrix,
+                      L: BDV[Double]): IndexedRowMatrix = {
+
+    new IndexedRowMatrix(matrix.rows.map(r => {
+      IndexedRow(r.index, BDVtoV(VtoBDV(r.vector) :/ L))
+    }))
+  }
+
 
   def printTime(tick: Long, tock: Long, msg: String): Unit = {
     val time: Long = tock - tick

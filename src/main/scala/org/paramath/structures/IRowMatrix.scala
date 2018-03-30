@@ -3,9 +3,12 @@ package org.paramath.structures
 
 import org.paramath.BLAS
 import breeze.linalg.{DenseMatrix => BDM, DenseVector => BDV}
+import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.mllib.linalg.Vectors
+import org.apache.spark.mllib.linalg.distributed.{IndexedRow, IndexedRowMatrix}
 import org.apache.spark.mllib.stat.{MultivariateOnlineSummarizer, MultivariateStatisticalSummary}
+import org.bliu.CloudCP.InitialIndexedRowMatrix
 
 class IRowMatrix(var rows: RDD[(Long, BDV[Double])],
                  var numRows: Long = -1,
@@ -136,4 +139,14 @@ class IRowMatrix(var rows: RDD[(Long, BDV[Double])],
 
     new IRowMatrix(AB, numRows, B.cols)
   }
+}
+
+object IRowMatrix {
+
+//  def zeros(numRows: Long, rank: Int, sc: SparkContext): Unit = {
+//    val M1:IndexedRowMatrix =
+//      new IndexedRowMatrix(InitialIndexedRowMatrix(SizeOfMatrix,Rank,sc)
+//        .rows.map(x =>
+//        IndexedRow(x.index,Vectors.zeros(Rank))))
+//  }
 }

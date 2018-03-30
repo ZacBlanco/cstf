@@ -53,9 +53,9 @@ object TensorCPGeneralized {
              tolerance: Double,
              sc: SparkContext): Double = {
 
-    val sizeVector = CloudCP.RDD_VtoRowMatrix(tensorData)
+    val tensor = tensorData.cache()
+    val sizeVector = CloudCP.RDD_VtoRowMatrix(tensor)
       .computeColumnSummaryStatistics().max
-
     val dims = tensorData.first().size - 1
 
     val time_s: Long = System.nanoTime()
@@ -92,7 +92,7 @@ object TensorCPGeneralized {
           tick = System.currentTimeMillis()
 
           val mats = dropAndRotate(matrices, j)
-          matrices(j) = mttkrpProduct(tensorData,
+          matrices(j) = mttkrpProduct(tensor,
             mats,
             rank,
             j,
@@ -111,7 +111,7 @@ object TensorCPGeneralized {
         CSTFUtils.printTime(cpalstick, cpalstock, s"CP_ALS $i")
         prev_fit = fit
         tick = System.currentTimeMillis()
-        fit = computeFit(tensorData, lambda, matrices)
+        fit = computeFit(tensor, lambda, matrices)
         tock = System.currentTimeMillis()
         CSTFUtils.printTime(tick, tock, s"Compute Fit $i")
         val_fit = abs(fit - prev_fit)

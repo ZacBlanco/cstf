@@ -42,7 +42,7 @@ object CloudCP {
 
   def InitialRowMatrix(Size:Long,
                        Rank:Int,
-                       sc:SparkContext):(RowMatrix)={
+                       sc:SparkContext): RowMatrix = {
 
     val rowData = RandomRDDs.uniformVectorRDD(sc,Size,Rank)
       .map(x => Vectors.dense(BDV.rand[Double](Rank).toArray))
