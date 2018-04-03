@@ -33,7 +33,9 @@ object CSTFRunner {
 
 
     var sparkS: SparkConf = new SparkConf().setAppName("CSTFRunner")
-//      sparkS = sparkS.setMaster("local[*]")
+//      .set("spark.executor.extraJavaOptions", "-XX:+UseG1GC -XX:ConcGCThreads=16 -XX:ParallelGCThreads=16 -XX:InitiatingHeapOccupancyPercent=35 -verbose:gc -XX:+PrintGCDetails -XX:+PrintGCTimeStamps")
+//      .set("spark.executor.extraJavaOptions", "-verbose:gc -XX:+PrintGCDetails -XX:+PrintGCTimeStamps")
+    //      sparkS = sparkS.setMaster("local[*]")
 
     var rl = Logger.getRootLogger()
     rl.setLevel(Level.ERROR)
@@ -43,7 +45,7 @@ object CSTFRunner {
 
     val outputFile = "CSTF_Output"
     val data: RDD[String] = sc.textFile(inputFile)
-    val tensor:RDD[Vector] = CSTFUtils.FileToTensor(data)
+    val tensor:RDD[Vector] = CSTFUtils.FileToTensor(data).cache()
 
 
     var rt: Double = 0.0

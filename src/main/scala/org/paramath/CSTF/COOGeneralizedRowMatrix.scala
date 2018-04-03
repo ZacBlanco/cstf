@@ -9,10 +9,11 @@ import breeze.numerics.{abs, sqrt}
 import org.apache.spark.mllib.linalg.Vector
 import org.apache.spark.mllib.linalg.distributed.{IndexedRow, IndexedRowMatrix}
 import org.apache.spark.rdd.RDD
-import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.SparkContext
 import org.paramath.CSTF.utils.CSTFUtils
 import org.paramath.structures.IRowMatrix
 
+import scala.collection.mutable
 import scala.collection.mutable.{ListBuffer, Queue}
 import scala.util.control.Breaks
 
@@ -29,6 +30,8 @@ object COOGeneralizedRowMatrix {
              tolerance: Double,
              sc: SparkContext): Double = {
 
+    val num_exec = sc.getExecutorStorageStatus.map(_.blockManagerId.executorId).filter(_ != "driver").length
+    println(s"Working with $num_exec executors.")
     val sizeVector = CSTFUtils.RDD_DVtoRowMatrix(tensorData)
       .computeColumnSummaryStatistics().max
     val normVal = tensorData.map(x => x(x.size-1)*x(x.size-1)).reduce(_+_)
@@ -44,6 +47,7 @@ object COOGeneralizedRowMatrix {
     val matrices = new Array[IndexedRowMatrix](dims)
     for(i <- 0 until matrices.length) {
       matrices(i) = CSTFUtils.randomIndexedRowMatrix(maxDimSizes(i), rank, sc)
+      matrices(i).rows.cache()
     }
 
     var N:Int = 0
@@ -79,7 +83,7 @@ object COOGeneralizedRowMatrix {
         .map({ case(ind: Long, ((vec: Vector, vQ: Queue[Vector]), vNew: Vector)) => {
         vQ.enqueue(vNew)
         (vec((i + 1) % dims).toLong, (vec, vQ))
-      }})
+      }}).cache()
 //      val imd = (i+1) % dims
 //      println(s" i:$i, (i+1)%dims: $imd")
     }
@@ -116,12 +120,34 @@ object COOGeneralizedRowMatrix {
               (vec(j).toLong, (vec, q))
             }
           }).cache()
+//          val circ_p = circular.partitions.length
+//          println(s"Circular RDD partitions: $circ_p")
           val matRows = circular.mapValues({
             case (vec: Vector, q: Queue[Vector]) => {
-              val vNew: BDV[Double] = q.map(v => CSTFUtils.VtoBDV(v)).reduce(_ :* _)
-              vNew :* vec(dims)
+              q.map(v => CSTFUtils.VtoBDV(v)).reduce(_ :* _) :* vec(dims)
             }
           }).reduceByKey(_ + _)
+//          if(sizeVector(j) > 10) {
+//            circular = circular.join(CSTFUtils.splitIndexedRowMatrix(mat)).map({
+//              case (oldInd: Long, ((vec: Vector, q: Queue[Vector]), vNew: Vector)) => {
+//                q.dequeue()
+//                q.enqueue(vNew)
+//                (vec(j).toLong, (vec, q))
+//              }
+//            }).cache()
+//            val circ_p = circular.partitions.length
+//            println(s"Circular RDD partitions: $circ_p")
+//            val matRows = circular.mapValues({
+//              case (vec: Vector, q: Queue[Vector]) => {
+//                q.map(v => CSTFUtils.VtoBDV(v)).reduce(_ :* _) :* vec(dims)
+//              }
+//            }).reduceByKey(_ + _)
+//          } else {
+//            val rm = mat.rows.collect()
+//            val hm = new mutable.HashMap[Long, Vector]()
+//            rm.foreach(f => hm.put(f.index, f.vector))
+//            circular.map(f => )
+//          }
           // =================================================================
           // =================== MTTKRP OPERATION ============================
           // =================================================================
@@ -156,7 +182,7 @@ object COOGeneralizedRowMatrix {
         CSTFUtils.printTime(cpalstick, cpalstock, s"CP_ALS $i")
         prev_fit = fit
         tick = System.currentTimeMillis()
-        fit = computeFitCircular(circular, matrices.last, gmQ, lambda, normVal)
+//        fit = computeFitCircular(circular, matrices.last, gmQ, lambda, normVal)
 //        fit = computeFit(tensorData, lambda, matrices)
         tock = System.currentTimeMillis()
         CSTFUtils.printTime(tick, tock, s"Compute Fit $i")
