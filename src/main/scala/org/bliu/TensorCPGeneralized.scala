@@ -12,7 +12,7 @@ import org.apache.spark.mllib.linalg.{Vector, Vectors}
 import org.apache.spark.mllib.linalg.distributed.{IndexedRow, IndexedRowMatrix}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.{SparkConf, SparkContext}
-import org.paramath.CSTF.utils.CSTFUtils
+import org.paramath.CSTF.utils.{CSTFUtils, TaskInfoRecorderListener}
 
 import scala.collection.mutable.ListBuffer
 import scala.util.control.Breaks
@@ -76,6 +76,8 @@ object TensorCPGeneralized {
     var prev_fit:Double = 0.0
     var val_fit:Double = 0.0
 
+    val listener = new TaskInfoRecorderListener(false)
+    sc.addSparkListener(listener)
 
     val loop = new Breaks
 
@@ -98,8 +100,22 @@ object TensorCPGeneralized {
             j,
             matrices(j).numRows(),
             sc)
+          val keys: Array[String] = Array("schedulerDelay", "gettingResultTime", "executorRunTime",
+            "jvmGCTime", "diskBytesSpilled", "memoryBytesSpilled",
+            "fetchWaitTime", "localBlocksFetched", "localBytesRead", "recordsRead",
+            "remoteBlocksFetched", "remoteBytesRead", "totalBlocksFetched", "totalBytesRead",
+            "shuffleBytesWritten", "shuffleRecordsWritten", "shuffleWriteTime")
+          keys.map(key => {
+            val s = listener.gatherTaskVals(key)
+            println(s"KeyMetric MTTKRP $i $j: $key => $s")
+          })
           lambda = CloudCP.UpdateLambda(matrices(j), i)
           matrices(j) = CloudCP.NormalizeMatrix(matrices(j), lambda)
+
+          keys.map(key => {
+            val s = listener.gatherTaskVals(key)
+            println(s"KeyMetric GRAM $i $j: $key => $s")
+          })
 
           tock = System.currentTimeMillis()
           CSTFUtils.printTime(tick, tock, s"Compute M$j $i")

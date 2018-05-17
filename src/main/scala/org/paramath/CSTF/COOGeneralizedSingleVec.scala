@@ -6,17 +6,17 @@ package org.paramath.CSTF
 
 import breeze.linalg.{pinv, sum, DenseMatrix => BDM, DenseVector => BDV}
 import breeze.numerics.{abs, sqrt}
+import org.apache.spark.{HashPartitioner, SparkContext}
 import org.apache.spark.mllib.linalg.Vector
 import org.apache.spark.mllib.linalg.distributed.{IndexedRow, IndexedRowMatrix}
 import org.apache.spark.rdd.RDD
-import org.apache.spark.SparkContext
-import org.paramath.CSTF.utils.{CSTFUtils, TaskInfoRecorderListener}
+import org.paramath.CSTF.utils.CSTFUtils
 import org.paramath.structures.IRowMatrix
 
 import scala.collection.mutable.{ListBuffer, Queue}
 import scala.util.control.Breaks
 
-object COOGeneralizedRowMatrix {
+object COOGeneralizedSingleVec {
 
 
   /**
@@ -29,8 +29,9 @@ object COOGeneralizedRowMatrix {
              tolerance: Double,
              sc: SparkContext): Double = {
 
-    val num_exec = sc.getExecutorStorageStatus.map(_.blockManagerId.executorId).filter(_ != "driver").length
-    println(s"Working with $num_exec executors.")
+    var raw_num_exec = sc.getExecutorStorageStatus.map(_.blockManagerId.executorId).filter(_ != "driver").length
+    val num_exec = if (raw_num_exec > 0) raw_num_exec else 1
+    println(s"Working with $num_exec executor(s).")
     val sizeVector = CSTFUtils.RDD_DVtoRowMatrix(tensorData)
       .computeColumnSummaryStatistics().max
     val normVal = tensorData.map(x => x(x.size-1)*x(x.size-1)).reduce(_+_)
@@ -43,10 +44,10 @@ object COOGeneralizedRowMatrix {
       maxDimSizes += (sizeVector(i) + 1).toLong
     }
 
-    val matrices = new Array[IndexedRowMatrix](dims)
+    val matrices = new Array[IRowMatrix](dims)
     for(i <- 0 until matrices.length) {
-      matrices(i) = CSTFUtils.randomIndexedRowMatrix(maxDimSizes(i), rank, sc)
-      matrices(i).rows.cache()
+      matrices(i) = CSTFUtils.Randomized_IRM(maxDimSizes(i), rank, sc)
+      matrices(i).rows = matrices(i).rows.partitionBy(new HashPartitioner(num_exec*4))
     }
 
     var N:Int = 0
@@ -63,29 +64,23 @@ object COOGeneralizedRowMatrix {
     // The queue of calculated gram matrices
     val gmQ: Queue[BDM[Double]] = new Queue[BDM[Double]]()
 
-    val listener = new TaskInfoRecorderListener(false)
-    sc.addSparkListener(listener)
-
     // READ THIS TO GET A BETTER UNDERSTANDING OF HOW THIS ALGORITHM WORKS
     // Start with the 0th index of our COO data (i.e. put the vector for V_i in the queue)
     // Once V_i is in the queue add the rest of the vectors to the queue
-    var circular: RDD[(Long, (Vector, Array[Vector]))] = tensorData
+    var circular: RDD[(Long, (Vector, Vector))] = tensorData
       .map(v => (v(0).toLong, v))
-      .join(CSTFUtils.splitIndexedRowMatrix(matrices(0))) // join the ith vectors
+      .join(matrices(0).rows) // join the ith vectors
       .map({
-      case(ind: Long, (v: Vector, data: Vector)) => {
-        val q = new Array[Vector](dims-1)
-        q(0) = data
-        (v(1 % dims).toLong, (v, q))
+      case(ind: Long, (v: Vector, data: BDV[Double])) => {
+        (v(1 % dims).toLong, (v, CSTFUtils.BDVtoV(data)))
       }
-    }).cache()
+    }).cache().partitionBy(new HashPartitioner(num_exec*4))
 
     for(i <- 1 until matrices.length - 1) {
-      val newCircular = circular.join(CSTFUtils.splitIndexedRowMatrix(matrices(i)))
-        .map({ case(ind: Long, ((vec: Vector, vQ: Array[Vector]), vNew: Vector)) => {
-        vQ(i) = vNew
-        (vec((i + 1) % dims).toLong, (vec, vQ))
-      }}).cache()
+      val newCircular: RDD[(Long, (Vector, Vector))] = circular.join(matrices(i).rows)
+        .map({ case(ind: Long, ((vec: Vector, vQ: Vector), vNew: BDV[Double])) => {
+        (vec((i + 1) % dims).toLong, (vec, CSTFUtils.BDVtoV(CSTFUtils.VtoBDV(vQ) :* vNew)))
+      }}).partitionBy(new HashPartitioner(num_exec*4)).cache()
       circular.unpersist(false)
       circular = newCircular
 //      val imd = (i+1) % dims
@@ -94,7 +89,7 @@ object COOGeneralizedRowMatrix {
 
     // Compute ALL of the gram matrices and add them to the queue
     for(i <- 0 until matrices.length) {
-      gmQ.enqueue(CSTFUtils.MatrixToBDM(matrices(i).computeGramianMatrix()))
+      gmQ.enqueue(matrices(i).computeGramian())
     }
 
     loop.breakable{
@@ -112,32 +107,37 @@ object COOGeneralizedRowMatrix {
 
           // Get the matrix which we need to add to join on
           val matInd: Int = if(j == 0) matrices.length - 1 else ( (j-1) % matrices.length)
-          val mat: IndexedRowMatrix = matrices(matInd)
+          val mat: IRowMatrix = matrices(matInd)
           // =================================================================
           // =================== MTTKRP OPERATION ============================
           // =================================================================
 
-          val newCircular = circular.join(CSTFUtils.splitIndexedRowMatrix(mat)).map({
-            case (oldInd: Long, ((vec: Vector, q: Array[Vector]), vNew: Vector)) => {
-              for(z <- 0 until q.length - 1) q(z) = q(z+1)
-              q(q.length-1) = vNew
-              (vec(j).toLong, (vec, q))
+          val newCircular: RDD[(Long, (Vector, Vector))] = circular.join(mat.rows).map({
+            case (oldInd: Long, ((vec: Vector, q: Vector), vNew: BDV[Double])) => {
+              (vec(j).toLong, (vec, CSTFUtils.BDVtoV(CSTFUtils.VtoBDV(q) :* vNew)))
             }
-          }).cache()
-//          circular.unpersist(false)
+          }).join(matrices(j).rows).mapValues({
+            case ((tens: Vector, vOld: Vector), vNew: BDV[Double]) => {
+              (tens, CSTFUtils.BDVtoV(CSTFUtils.VtoBDV(vOld) :/ vNew))
+            }
+          }).cache().partitionBy(new HashPartitioner(num_exec*4))
+          circular.unpersist(false)
           circular = newCircular
+//          val circ_p = circular.partitions.length
+//          println(s"Circular RDD partitions: $circ_p")
           val matRows = circular.mapValues({
-            case (vec: Vector, q: Array[Vector]) => {
-              q.map(v => CSTFUtils.VtoBDV(v)).reduce(_ :* _) :* vec(dims)
+            case (vec: Vector, q: Vector) => {
+              CSTFUtils.VtoBDV(q) :* vec(dims)
             }
           }).reduceByKey(_ + _)
+
           // =================================================================
           // =================== MTTKRP OPERATION ============================
           // =================================================================
 
           // MTTKRP Complete
           // This is the first matrix of the CP_ALS algorithm
-          val M1 = new IndexedRowMatrix(matRows.map(f => IndexedRow(f._1, CSTFUtils.BDVtoV(f._2))))
+          val M1 = new IRowMatrix(matRows)
 
           // Compute M2 - All of the gram matrices together
           // Use the queue of GM's to calculate the product
@@ -146,27 +146,15 @@ object COOGeneralizedRowMatrix {
           gmQ.dequeue()
           val M2: BDM[Double] = pinv(gmQ.reduce((m1, m2) => m1 :* m2))
 
-          matrices(j) = M1.multiply(CSTFUtils.BDMToMatrix(M2))
-          val keys: Array[String] = Array("schedulerDelay", "gettingResultTime", "executorRunTime",
-            "jvmGCTime", "diskBytesSpilled", "memoryBytesSpilled",
-          "fetchWaitTime", "localBlocksFetched", "localBytesRead", "recordsRead",
-          "remoteBlocksFetched", "remoteBytesRead", "totalBlocksFetched", "totalBytesRead",
-          "shuffleBytesWritten", "shuffleRecordsWritten", "shuffleWriteTime")
-          keys.map(key => {
-            val s = listener.gatherTaskVals(key)
-            println(s"KeyMetric MTTKRP $i $j: $key => $s")
-          })
-          matrices(j).rows.cache()
+          matrices(j) = M1.multiply(M2)
+          matrices(j).rows.cache().partitionBy(new HashPartitioner(num_exec))
 
           lambda = CSTFUtils.updateLambda(matrices(j), i)
           matrices(j) = CSTFUtils.normalizeMatrix(matrices(j), lambda)
 
           // Enqueue the new gram matrix
-          gmQ.enqueue(CSTFUtils.MatrixToBDM(matrices(j).computeGramianMatrix()))
-          keys.map(key => {
-            val s = listener.gatherTaskVals(key)
-            println(s"KeyMetric GRAM $i $j: $key => $s")
-          })
+          gmQ.enqueue(matrices(j).computeGramian())
+
 
           tock = System.currentTimeMillis()
           CSTFUtils.printTime(tick, tock, s"Compute M$j $i")
@@ -243,7 +231,7 @@ object COOGeneralizedRowMatrix {
 
 
   }
-  def computeFitCircular(circularRDD: RDD[(Long, (Vector, Array[Vector]))],
+  def computeFitCircular(circularRDD: RDD[(Long, (Vector, Vector))],
                          jMat: IndexedRowMatrix,
                          gms: Queue[BDM[Double]],
                          lambda: BDV[Double],
@@ -254,8 +242,8 @@ object COOGeneralizedRowMatrix {
 
 
     val result: BDV[Double] = circularRDD.join(CSTFUtils.splitIndexedRowMatrix(jMat)).map({
-      case (oldInd: Long, ((v: Vector, q: Array[Vector]), vNew: Vector)) => {
-        (CSTFUtils.VtoBDV(vNew) :* q.map(v => CSTFUtils.VtoBDV(v)).reduce(_ :* _) :* v(v.size-1))
+      case (oldInd: Long, ((v: Vector, q: Vector), vNew: Vector)) => {
+        CSTFUtils.VtoBDV(vNew) :* CSTFUtils.VtoBDV(q) :* v(v.size-1)
       }
     }).reduce(_ + _)
     product += (result.t * lambda)

@@ -61,6 +61,9 @@ object CSTFRunner {
     } else if (version == 3) {
       println("Running generalized QCOO with native spark ops")
       rt = COOGeneralizedRowMatrix.CP_ALS(tensor, maxIterations, rank, tolerance, sc)
+    } else if (version == 4) {
+      println("Running generalized QCOO with native spark ops with a SINGLE VECTOR QUEUE")
+      rt = COOGeneralizedRowMatrix.CP_ALS(tensor, maxIterations, rank, tolerance, sc)
     }
     println(s"Running time: $rt")
 
